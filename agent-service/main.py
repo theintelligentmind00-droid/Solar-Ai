@@ -9,8 +9,10 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from db.schema import init_db
+from middleware.auth import ApiKeyMiddleware
 from routes.briefing import router as briefing_router
 from routes.chat import router as chat_router
+from routes.gmail import router as gmail_router
 from routes.greeting import router as greeting_router
 from routes.integrations import router as integrations_router
 from routes.logs import router as logs_router
@@ -36,6 +38,7 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+app.add_middleware(ApiKeyMiddleware)
 
 app.include_router(chat_router)
 app.include_router(planets_router)
@@ -45,6 +48,7 @@ app.include_router(greeting_router)
 app.include_router(integrations_router)
 app.include_router(tasks_router)
 app.include_router(briefing_router)
+app.include_router(gmail_router)
 
 
 @app.get("/health")

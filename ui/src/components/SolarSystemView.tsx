@@ -47,6 +47,9 @@ export function SolarSystemView({
   const [sunHovered, setSunHovered] = useState(false);
   const [launching, setLaunching]   = useState(false);
   const [zoom, setZoom]             = useState(1);
+  const [notifOpen, setNotifOpen]     = useState(false);
+  const [briefings, setBriefings]     = useState<Array<{planet: Planet; text: string}>>([]);
+  const [briefingLoading, setBriefingLoading] = useState(false);
 
   const anglesRef    = useRef<Map<string, number>>(new Map());
   const moonsRef     = useRef<Map<string, number>>(new Map());
@@ -148,6 +151,27 @@ export function SolarSystemView({
     setZoom((prev) => Math.min(2.8, Math.max(0.35, prev - e.deltaY * 0.0008)));
   };
 
+  const fetchBriefings = async () => {
+    if (briefingLoading || planets.length === 0) return;
+    setBriefingLoading(true);
+    setNotifOpen(true);
+    try {
+      const results = await Promise.all(
+        planets.map(async (p) => {
+          try {
+            const b = await api.getBriefing(p.id);
+            return { planet: p, text: b.briefing };
+          } catch {
+            return { planet: p, text: "Unable to load briefing." };
+          }
+        })
+      );
+      setBriefings(results);
+    } finally {
+      setBriefingLoading(false);
+    }
+  };
+
   return (
     <div
       className="relative w-full h-screen flex flex-col items-center"
@@ -170,6 +194,32 @@ export function SolarSystemView({
 
       {/* ── Top-right controls ──────────────────────── */}
       <div className="absolute top-5 right-6 z-10 flex items-center gap-2">
+        {/* Notification bell */}
+        <button
+          onClick={() => notifOpen ? setNotifOpen(false) : fetchBriefings()}
+          className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium transition-all relative"
+          style={{
+            color: notifOpen ? "white" : "var(--text-muted)",
+            border: "1px solid rgba(167,139,250,0.15)",
+            background: notifOpen ? "rgba(167,139,250,0.12)" : "rgba(255,255,255,0.03)",
+            letterSpacing: "0.06em",
+          }}
+          title="Solar briefings"
+        >
+          ◎
+          {briefings.length > 0 && !notifOpen && (
+            <span style={{
+              position: "absolute", top: "-4px", right: "-4px",
+              width: "14px", height: "14px", borderRadius: "50%",
+              background: "var(--sun-color)", color: "#0a0508",
+              fontSize: "8px", fontWeight: 700,
+              display: "flex", alignItems: "center", justifyContent: "center",
+            }}>
+              {briefings.length}
+            </span>
+          )}
+        </button>
+
         {/* Mission Control */}
         <button
           onClick={onOpenControlCenter}
@@ -239,6 +289,89 @@ export function SolarSystemView({
             <div style={{ fontSize: "0.75rem", letterSpacing: "0.2em", marginTop: "8px", color: "rgba(245,158,11,0.5)" }}>
               PREPARING ORBITAL INSERTION…
             </div>
+          </div>
+        </div>
+      )}
+
+      {/* ── Notification panel ──────────────────────────── */}
+      {notifOpen && (
+        <div
+          className="absolute z-20"
+          style={{
+            top: "52px",
+            right: "6px",
+            width: "320px",
+            maxHeight: "420px",
+            background: "rgba(5, 3, 14, 0.92)",
+            backdropFilter: "blur(24px)",
+            WebkitBackdropFilter: "blur(24px)",
+            border: "1px solid rgba(167,139,250,0.12)",
+            borderRadius: "12px",
+            boxShadow: "0 8px 40px rgba(0,0,0,0.5)",
+            overflow: "hidden",
+            display: "flex",
+            flexDirection: "column",
+          }}
+        >
+          {/* Panel header */}
+          <div style={{
+            padding: "12px 16px",
+            borderBottom: "1px solid rgba(167,139,250,0.08)",
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "space-between",
+            flexShrink: 0,
+          }}>
+            <span style={{ fontSize: "10px", letterSpacing: "0.15em", color: "var(--sun-color)", fontFamily: "monospace" }}>
+              SOLAR BRIEFINGS
+            </span>
+            <button
+              onClick={() => setNotifOpen(false)}
+              style={{ background: "none", border: "none", color: "var(--text-muted)", cursor: "pointer", fontSize: "14px", padding: 0 }}
+            >
+              ×
+            </button>
+          </div>
+
+          {/* Content */}
+          <div style={{ overflowY: "auto", flex: 1, padding: "8px" }}>
+            {briefingLoading && (
+              <div style={{ padding: "20px", textAlign: "center", color: "var(--text-dim)", fontSize: "11px", fontFamily: "monospace", letterSpacing: "0.1em" }}>
+                SOLAR IS THINKING…
+              </div>
+            )}
+            {!briefingLoading && briefings.length === 0 && (
+              <div style={{ padding: "20px", textAlign: "center", color: "var(--text-dim)", fontSize: "12px" }}>
+                No planets in orbit yet.
+              </div>
+            )}
+            {!briefingLoading && briefings.map(({ planet, text }) => (
+              <div
+                key={planet.id}
+                style={{
+                  padding: "10px 12px",
+                  marginBottom: "6px",
+                  background: "rgba(255,255,255,0.02)",
+                  border: "1px solid rgba(167,139,250,0.07)",
+                  borderRadius: "8px",
+                }}
+              >
+                <div style={{ display: "flex", alignItems: "center", gap: "8px", marginBottom: "6px" }}>
+                  <div style={{
+                    width: "8px", height: "8px", borderRadius: "50%",
+                    background: planet.color,
+                    boxShadow: `0 0 6px ${planet.color}`,
+                    flexShrink: 0,
+                  }} />
+                  <span style={{ fontSize: "10px", color: "white", fontWeight: 500, letterSpacing: "0.04em" }}>
+                    {planet.name}
+                  </span>
+                </div>
+                <div style={{ fontSize: "11px", color: "rgba(255,255,255,0.6)", lineHeight: "1.55" }}>
+                  {text}
+                </div>
+              </div>
+            ))}
           </div>
         </div>
       )}

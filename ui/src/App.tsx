@@ -12,6 +12,11 @@ export default function App() {
   const [serviceOnline, setServiceOnline]       = useState<boolean | null>(null);
   const [showSettings, setShowSettings]         = useState(false);
   const [showControlCenter, setShowControlCenter] = useState(false);
+  const [apiKey, setApiKey] = useState<string>(sessionStorage.getItem("solar_api_key") ?? "");
+  const [keyInput, setKeyInput] = useState("");
+  const [keyError, setKeyError] = useState(false);
+  const [checkingKey, setCheckingKey] = useState(false);
+  const [needsKey, setNeedsKey] = useState(false);
 
   useEffect(() => {
     api.health()
@@ -19,8 +24,93 @@ export default function App() {
       .catch(() => setServiceOnline(false));
   }, []);
 
+  useEffect(() => {
+    if (apiKey) return; // already have a key
+    fetch("/api/health").then((r) => {
+      if (r.status === 401) setNeedsKey(true);
+    }).catch(() => {});
+  }, [apiKey]);
+
+  const submitKey = async () => {
+    const key = keyInput.trim();
+    if (!key) return;
+    setCheckingKey(true);
+    setKeyError(false);
+    try {
+      const r = await fetch("/api/health", { headers: { "X-Api-Key": key } });
+      if (r.ok) {
+        sessionStorage.setItem("solar_api_key", key);
+        setApiKey(key);
+      } else {
+        setKeyError(true);
+      }
+    } catch {
+      setKeyError(true);
+    } finally {
+      setCheckingKey(false);
+    }
+  };
+
   return (
     <div className="w-screen h-screen overflow-hidden relative">
+
+      {needsKey && !apiKey && (
+        <div style={{
+          position: "fixed", inset: 0, zIndex: 100,
+          background: "rgba(7,7,15,0.98)",
+          backdropFilter: "blur(20px)",
+          display: "flex", alignItems: "center", justifyContent: "center",
+        }}>
+          <div style={{
+            width: "340px",
+            background: "rgba(12,10,24,0.9)",
+            border: "1px solid rgba(167,139,250,0.15)",
+            borderRadius: "16px",
+            padding: "32px",
+            display: "flex", flexDirection: "column", gap: "20px",
+          }}>
+            <div style={{ textAlign: "center" }}>
+              <div style={{ fontSize: "2rem", marginBottom: "8px", filter: "drop-shadow(0 0 14px rgba(245,158,11,0.6))" }}>☀</div>
+              <div style={{ fontSize: "14px", color: "white", fontWeight: 600, letterSpacing: "0.04em" }}>Solar AI OS</div>
+              <div style={{ fontSize: "11px", color: "var(--text-dim)", marginTop: "4px", letterSpacing: "0.06em" }}>Enter your access key to continue</div>
+            </div>
+            <div style={{ display: "flex", flexDirection: "column", gap: "10px" }}>
+              <input
+                autoFocus
+                type="password"
+                placeholder="Access key…"
+                value={keyInput}
+                onChange={(e) => setKeyInput(e.target.value)}
+                onKeyDown={(e) => e.key === "Enter" && submitKey()}
+                style={{
+                  background: "rgba(255,255,255,0.04)",
+                  border: `1px solid ${keyError ? "rgba(239,68,68,0.5)" : "rgba(167,139,250,0.2)"}`,
+                  borderRadius: "10px", padding: "10px 14px",
+                  color: "white", fontSize: "14px", outline: "none", fontFamily: "inherit",
+                }}
+              />
+              {keyError && (
+                <div style={{ fontSize: "11px", color: "#fca5a5", letterSpacing: "0.04em" }}>
+                  Invalid key — check your SOLAR_API_KEY setting
+                </div>
+              )}
+              <button
+                onClick={submitKey}
+                disabled={checkingKey || !keyInput.trim()}
+                style={{
+                  background: checkingKey ? "rgba(245,158,11,0.3)" : "var(--sun-color)",
+                  border: "none", borderRadius: "10px", padding: "10px",
+                  color: "#0a0508", fontWeight: 600, fontSize: "13px",
+                  cursor: checkingKey ? "not-allowed" : "pointer",
+                  fontFamily: "inherit", transition: "all 0.15s",
+                }}
+              >
+                {checkingKey ? "Checking…" : "Enter"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* ── Persistent shooting stars ───────────────── */}
       <ShootingStars />

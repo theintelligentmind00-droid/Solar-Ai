@@ -1,5 +1,14 @@
 const BASE_URL = "/api";
 
+function getApiKey(): string {
+  return sessionStorage.getItem("solar_api_key") ?? "";
+}
+
+function authHeaders(): Record<string, string> {
+  const key = getApiKey();
+  return key ? { "X-Api-Key": key } : {};
+}
+
 export interface Planet {
   id: string;
   name: string;
@@ -51,7 +60,7 @@ export interface Task {
 
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
   const res = await fetch(`${BASE_URL}${path}`, {
-    headers: { "Content-Type": "application/json" },
+    headers: { "Content-Type": "application/json", ...authHeaders() },
     ...init,
   });
   if (!res.ok) {
@@ -104,7 +113,7 @@ export const api = {
     ),
 
   getTasks: async (planetId: string): Promise<Task[]> => {
-    const r = await fetch(`${BASE_URL}/tasks/${planetId}`);
+    const r = await fetch(`${BASE_URL}/tasks/${planetId}`, { headers: authHeaders() });
     if (!r.ok) throw new Error("Failed to fetch tasks");
     return r.json() as Promise<Task[]>;
   },
@@ -112,7 +121,7 @@ export const api = {
   createTask: async (planetId: string, title: string, description?: string, priority?: string): Promise<Task> => {
     const r = await fetch(`${BASE_URL}/tasks/${planetId}`, {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers: { "Content-Type": "application/json", ...authHeaders() },
       body: JSON.stringify({ title, description: description ?? null, priority: priority ?? "medium" }),
     });
     if (!r.ok) throw new Error("Failed to create task");
@@ -122,7 +131,7 @@ export const api = {
   updateTask: async (taskId: string, patch: { status?: string; title?: string; description?: string; priority?: string }): Promise<Task> => {
     const r = await fetch(`${BASE_URL}/tasks/${taskId}`, {
       method: "PATCH",
-      headers: { "Content-Type": "application/json" },
+      headers: { "Content-Type": "application/json", ...authHeaders() },
       body: JSON.stringify(patch),
     });
     if (!r.ok) throw new Error("Failed to update task");
@@ -130,13 +139,25 @@ export const api = {
   },
 
   deleteTask: async (taskId: string): Promise<void> => {
-    const r = await fetch(`${BASE_URL}/tasks/${taskId}`, { method: "DELETE" });
+    const r = await fetch(`${BASE_URL}/tasks/${taskId}`, { method: "DELETE", headers: authHeaders() });
     if (!r.ok) throw new Error("Failed to delete task");
   },
 
   getBriefing: async (planetId: string): Promise<{ planet_id: string; planet_name: string; briefing: string }> => {
-    const r = await fetch(`${BASE_URL}/briefing/${planetId}`);
+    const r = await fetch(`${BASE_URL}/briefing/${planetId}`, { headers: authHeaders() });
     if (!r.ok) throw new Error("Failed to fetch briefing");
     return r.json() as Promise<{ planet_id: string; planet_name: string; briefing: string }>;
+  },
+
+  getGmailStatus: async (): Promise<{ configured: boolean; setup_instructions: string | null }> => {
+    const r = await fetch(`${BASE_URL}/gmail/status`, { headers: authHeaders() });
+    if (!r.ok) throw new Error("Failed to fetch Gmail status");
+    return r.json() as Promise<{ configured: boolean; setup_instructions: string | null }>;
+  },
+
+  getGmailSummary: async (): Promise<{ summary: string; count: number }> => {
+    const r = await fetch(`${BASE_URL}/gmail/summary`, { headers: authHeaders() });
+    if (!r.ok) throw new Error("Failed to fetch Gmail summary");
+    return r.json() as Promise<{ summary: string; count: number }>;
   },
 };

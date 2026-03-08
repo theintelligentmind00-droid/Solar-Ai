@@ -27,6 +27,21 @@ function formatDate(iso: string): string {
 // ── Mission tab ───────────────────────────────────────────────────────────────
 
 function MissionTab({ planet, accentColor }: { planet: Planet; accentColor: string }) {
+  const [briefing, setBriefing]           = useState<string | null>(null);
+  const [briefingLoading, setBriefingLoading] = useState(false);
+
+  const fetchBriefing = async () => {
+    setBriefingLoading(true);
+    try {
+      const result = await api.getBriefing(planet.id);
+      setBriefing(result.briefing);
+    } catch {
+      setBriefing("Unable to generate briefing — is the agent service running?");
+    } finally {
+      setBriefingLoading(false);
+    }
+  };
+
   return (
     <div
       style={{
@@ -92,11 +107,7 @@ function MissionTab({ planet, accentColor }: { planet: Planet; accentColor: stri
       </div>
 
       {/* Divider */}
-      <div
-        style={{
-          borderTop: "1px solid rgba(167,139,250,0.1)",
-        }}
-      />
+      <div style={{ borderTop: "1px solid rgba(167,139,250,0.1)" }} />
 
       {/* HUD readouts */}
       <div
@@ -135,29 +146,87 @@ function MissionTab({ planet, accentColor }: { planet: Planet; accentColor: stri
         ))}
       </div>
 
-      {/* Mission brief placeholder */}
+      {/* Mission briefing */}
       <div
         style={{
           borderLeft: `3px solid ${AMBER}66`,
-          paddingLeft: "12px",
           background: `${AMBER}08`,
           borderRadius: "0 6px 6px 0",
           padding: "12px 12px 12px 14px",
+          display: "flex",
+          flexDirection: "column",
+          gap: "10px",
         }}
       >
-        <div
-          style={{
-            fontSize: "10px",
-            letterSpacing: "0.12em",
-            color: AMBER,
-            marginBottom: "6px",
-          }}
-        >
-          MISSION BRIEF
+        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+          <div
+            style={{
+              fontSize: "10px",
+              letterSpacing: "0.12em",
+              color: AMBER,
+            }}
+          >
+            MISSION BRIEF
+          </div>
+          <button
+            onClick={fetchBriefing}
+            disabled={briefingLoading}
+            style={{
+              background: briefingLoading ? "rgba(245,158,11,0.1)" : "rgba(245,158,11,0.15)",
+              border: `1px solid ${AMBER}44`,
+              borderRadius: "6px",
+              padding: "4px 10px",
+              color: briefingLoading ? "rgba(245,158,11,0.5)" : AMBER,
+              fontSize: "9px",
+              letterSpacing: "0.1em",
+              cursor: briefingLoading ? "not-allowed" : "pointer",
+              fontFamily: "monospace",
+              transition: "all 0.15s",
+            }}
+            onMouseEnter={(e) => {
+              if (!briefingLoading)
+                (e.currentTarget as HTMLButtonElement).style.background = "rgba(245,158,11,0.25)";
+            }}
+            onMouseLeave={(e) => {
+              if (!briefingLoading)
+                (e.currentTarget as HTMLButtonElement).style.background = "rgba(245,158,11,0.15)";
+            }}
+          >
+            {briefingLoading ? "GENERATING…" : briefing ? "↺ REFRESH" : "↯ GENERATE"}
+          </button>
         </div>
-        <div style={{ fontSize: "12px", color: "var(--text-muted)", lineHeight: "1.6" }}>
-          Chat with Solar to define this mission's objectives.
-        </div>
+
+        {briefingLoading && (
+          <div
+            style={{
+              fontSize: "11px",
+              color: "rgba(245,158,11,0.5)",
+              fontFamily: "monospace",
+              letterSpacing: "0.08em",
+              animation: "pulse 1.5s ease-in-out infinite",
+            }}
+          >
+            Solar is reading your project…
+          </div>
+        )}
+
+        {!briefingLoading && briefing && (
+          <div
+            style={{
+              fontSize: "12px",
+              color: "rgba(255,255,255,0.8)",
+              lineHeight: "1.65",
+            }}
+          >
+            {briefing}
+          </div>
+        )}
+
+        {!briefingLoading && !briefing && (
+          <div style={{ fontSize: "12px", color: "var(--text-muted)", lineHeight: "1.6" }}>
+            Click Generate for a Solar status update on this mission.
+          </div>
+        )}
       </div>
     </div>
   );
