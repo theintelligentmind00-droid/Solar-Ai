@@ -58,6 +58,26 @@ CREATE TABLE IF NOT EXISTS tasks (
     completed_at TEXT,
     FOREIGN KEY (planet_id) REFERENCES planets(id)
 );
+
+CREATE TABLE IF NOT EXISTS oauth_configs (
+    id TEXT PRIMARY KEY,
+    service TEXT NOT NULL UNIQUE,
+    client_id TEXT NOT NULL,
+    client_secret TEXT NOT NULL,
+    created_at TEXT NOT NULL DEFAULT (datetime('now')),
+    updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+
+CREATE TABLE IF NOT EXISTS oauth_tokens (
+    id TEXT PRIMARY KEY,
+    service TEXT NOT NULL UNIQUE,
+    access_token TEXT NOT NULL,
+    refresh_token TEXT,
+    token_expiry TEXT,
+    scopes TEXT,
+    created_at TEXT NOT NULL DEFAULT (datetime('now')),
+    updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
 """
 
 _SEED_INTEGRATIONS = """

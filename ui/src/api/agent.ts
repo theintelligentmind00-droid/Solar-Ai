@@ -149,15 +149,26 @@ export const api = {
     return r.json() as Promise<{ planet_id: string; planet_name: string; briefing: string }>;
   },
 
-  getGmailStatus: async (): Promise<{ configured: boolean; setup_instructions: string | null }> => {
-    const r = await fetch(`${BASE_URL}/gmail/status`, { headers: authHeaders() });
-    if (!r.ok) throw new Error("Failed to fetch Gmail status");
-    return r.json() as Promise<{ configured: boolean; setup_instructions: string | null }>;
-  },
+  getGmailStatus: () =>
+    request<{ configured: boolean; connected: boolean; redirect_uri: string }>(
+      "/gmail/status"
+    ),
 
   getGmailSummary: async (): Promise<{ summary: string; count: number }> => {
     const r = await fetch(`${BASE_URL}/gmail/summary`, { headers: authHeaders() });
     if (!r.ok) throw new Error("Failed to fetch Gmail summary");
     return r.json() as Promise<{ summary: string; count: number }>;
   },
+
+  configureGmail: (clientId: string, clientSecret: string) =>
+    request<{ ok: boolean; message: string }>("/gmail/configure", {
+      method: "POST",
+      body: JSON.stringify({ client_id: clientId, client_secret: clientSecret }),
+    }),
+
+  getGmailAuthUrl: () =>
+    request<{ url: string }>("/gmail/auth-url"),
+
+  disconnectGmail: () =>
+    request<{ ok: string }>("/gmail/disconnect", { method: "DELETE" }),
 };

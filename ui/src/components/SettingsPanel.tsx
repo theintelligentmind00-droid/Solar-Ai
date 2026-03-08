@@ -1,5 +1,5 @@
 import { Shield, X } from "lucide-react";
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { api, type Integration, type LogEntry, type Memory } from "../api/agent";
 
 interface Props {
@@ -35,6 +35,226 @@ function ToggleSwitch({
         }`}
       />
     </button>
+  );
+}
+
+type GmailStatus = { configured: boolean; connected: boolean; redirect_uri: string };
+
+function GmailConnectCard() {
+  const [status, setStatus] = useState<GmailStatus | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [expanded, setExpanded] = useState(false);
+  const [clientId, setClientId] = useState("");
+  const [clientSecret, setClientSecret] = useState("");
+  const [saving, setSaving] = useState(false);
+  const [saveError, setSaveError] = useState("");
+  const [connecting, setConnecting] = useState(false);
+  const [polling, setPolling] = useState(false);
+  const [disconnecting, setDisconnecting] = useState(false);
+
+  const refresh = useCallback(async () => {
+    try {
+      const s = await api.getGmailStatus();
+      setStatus(s);
+    } catch {
+      // ignore
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  useEffect(() => { void refresh(); }, [refresh]);
+
+  const handleSaveCredentials = async () => {
+    if (!clientId.trim() || !clientSecret.trim()) return;
+    setSaving(true);
+    setSaveError("");
+    try {
+      await api.configureGmail(clientId.trim(), clientSecret.trim());
+      await refresh();
+      setExpanded(false);
+    } catch {
+      setSaveError("Failed to save. Check the values and try again.");
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const handleConnect = async () => {
+    setConnecting(true);
+    try {
+      const { url } = await api.getGmailAuthUrl();
+      window.open(url, "_blank", "width=500,height=620");
+      // Poll for connection
+      setPolling(true);
+      const start = Date.now();
+      const interval = setInterval(async () => {
+        if (Date.now() - start > 90_000) {
+          clearInterval(interval);
+          setPolling(false);
+          setConnecting(false);
+          return;
+        }
+        try {
+          const s = await api.getGmailStatus();
+          setStatus(s);
+          if (s.connected) {
+            clearInterval(interval);
+            setPolling(false);
+            setConnecting(false);
+          }
+        } catch { /* ignore */ }
+      }, 2500);
+    } catch {
+      setConnecting(false);
+    }
+  };
+
+  const handleDisconnect = async () => {
+    setDisconnecting(true);
+    try {
+      await api.disconnectGmail();
+      await refresh();
+    } catch { /* ignore */ } finally {
+      setDisconnecting(false);
+    }
+  };
+
+  const inputStyle: React.CSSProperties = {
+    width: "100%",
+    background: "rgba(255,255,255,0.04)",
+    border: "1px solid rgba(167,139,250,0.2)",
+    borderRadius: "8px",
+    padding: "8px 12px",
+    color: "white",
+    fontSize: "12px",
+    fontFamily: "inherit",
+    outline: "none",
+    boxSizing: "border-box",
+  };
+
+  if (loading) {
+    return (
+      <div className="p-4 rounded-xl bg-slate-800/60 border border-slate-700 text-slate-500 text-sm">
+        Loading Gmail status…
+      </div>
+    );
+  }
+
+  return (
+    <div className="rounded-xl bg-slate-800/60 border border-slate-700 overflow-hidden">
+      {/* Header row */}
+      <div className="flex items-center justify-between p-4">
+        <div className="flex-1 min-w-0 mr-4">
+          <p className="text-white text-sm font-medium">Gmail</p>
+          <p className="text-slate-400 text-xs mt-0.5">Read emails and draft replies</p>
+        </div>
+        <div className="flex items-center gap-2 shrink-0">
+          {status?.connected ? (
+            <>
+              <span className="text-xs px-2 py-1 rounded-full font-medium bg-green-900/50 text-green-400">
+                connected
+              </span>
+              <button
+                onClick={handleDisconnect}
+                disabled={disconnecting}
+                className="text-xs px-2 py-1 rounded-lg text-red-400 hover:text-red-300 hover:bg-red-900/20 transition-colors disabled:opacity-50"
+              >
+                {disconnecting ? "…" : "Disconnect"}
+              </button>
+            </>
+          ) : status?.configured ? (
+            <>
+              <span className="text-xs px-2 py-1 rounded-full font-medium bg-yellow-900/40 text-yellow-400">
+                not connected
+              </span>
+              <button
+                onClick={handleConnect}
+                disabled={connecting}
+                className="text-xs px-3 py-1 rounded-lg bg-violet-700 hover:bg-violet-600 text-white font-medium transition-colors disabled:opacity-50"
+              >
+                {polling ? "Waiting…" : connecting ? "Opening…" : "Authorize"}
+              </button>
+            </>
+          ) : (
+            <>
+              <span className="text-xs px-2 py-1 rounded-full font-medium bg-slate-700 text-slate-400">
+                not set up
+              </span>
+              <button
+                onClick={() => setExpanded((v) => !v)}
+                className="text-xs px-3 py-1 rounded-lg bg-slate-700 hover:bg-slate-600 text-white font-medium transition-colors"
+              >
+                {expanded ? "Cancel" : "Set up"}
+              </button>
+            </>
+          )}
+        </div>
+      </div>
+
+      {/* Setup form */}
+      {expanded && !status?.configured && (
+        <div className="border-t border-slate-700 p-4 space-y-3">
+          <p className="text-slate-400 text-xs leading-relaxed">
+            <span className="text-yellow-400 font-medium">3 steps:</span>{" "}
+            Go to{" "}
+            <span className="text-violet-400 font-mono text-xs">console.cloud.google.com</span>
+            {" → "}Create/select a project → Enable Gmail API → APIs &amp; Services → Credentials →
+            Create OAuth 2.0 Client ID (Desktop app) → paste the values below.
+          </p>
+          <p className="text-slate-500 text-xs">
+            Add this as an authorized redirect URI in Google Cloud:{" "}
+            <span className="font-mono text-slate-300">
+              {status?.redirect_uri ?? "http://localhost:8000/gmail/callback"}
+            </span>
+          </p>
+          <div className="space-y-2">
+            <input
+              style={inputStyle}
+              type="text"
+              placeholder="Client ID (ends in .apps.googleusercontent.com)"
+              value={clientId}
+              onChange={(e) => setClientId(e.target.value)}
+            />
+            <input
+              style={inputStyle}
+              type="password"
+              placeholder="Client Secret"
+              value={clientSecret}
+              onChange={(e) => setClientSecret(e.target.value)}
+            />
+          </div>
+          {saveError && (
+            <p className="text-red-400 text-xs">{saveError}</p>
+          )}
+          <button
+            onClick={handleSaveCredentials}
+            disabled={saving || !clientId.trim() || !clientSecret.trim()}
+            className="w-full py-2 rounded-lg bg-violet-700 hover:bg-violet-600 text-white text-sm font-medium transition-colors disabled:opacity-40"
+          >
+            {saving ? "Saving…" : "Save & continue"}
+          </button>
+        </div>
+      )}
+
+      {/* Connected detail */}
+      {status?.connected && (
+        <div className="border-t border-slate-700 px-4 py-2">
+          <p className="text-green-400 text-xs">
+            ✓ Gmail is connected. Solar can read your emails and generate summaries.
+          </p>
+        </div>
+      )}
+
+      {/* Configured but not connected — show Authorize button hint */}
+      {status?.configured && !status.connected && !expanded && (
+        <div className="border-t border-slate-700 px-4 py-2">
+          <p className="text-yellow-400 text-xs">
+            Credentials saved. Click Authorize to complete the sign-in.
+          </p>
+        </div>
+      )}
+    </div>
   );
 }
 
@@ -158,6 +378,9 @@ export function SettingsPanel({ onClose }: Props) {
               </div>
             ) : (
               integrations.map((integration) => {
+                if (integration.name === "gmail") {
+                  return <GmailConnectCard key="gmail" />;
+                }
                 const meta = INTEGRATION_META[integration.name] ?? {
                   label: integration.name,
                   description: "",
