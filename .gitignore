@@ -1,0 +1,19 @@
+# Python
+agent-service/.venv/
+agent-service/__pycache__/
+agent-service/**/__pycache__/
+agent-service/.pytest_cache/
+agent-service/.ruff_cache/
+agent-service/solar_ai.db
+agent-service/.env
+
+# Node
+ui/node_modules/
+ui/dist/
+
+# Tauri build artifacts
+ui/src-tauri/target/
+
+# OS
+.DS_Store
+Thumbs.db

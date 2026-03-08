@@ -2,7 +2,20 @@
   "permissions": {
     "allow": [
       "Skill(frontend-design)",
-      "Skill(frontend-design:*)"
+      "Skill(frontend-design:*)",
+      "Bash(node --version)",
+      "Bash(npm --version)",
+      "Bash(rustc --version)",
+      "Bash(cargo --version)",
+      "Read(//c/Program Files/nodejs//**)",
+      "Read(//c/Users/liamf/AppData/Roaming/**)",
+      "Read(//c/Users/liamf/.cargo/bin/**)",
+      "Bash(\"/c/Program Files/nodejs/node.exe\" --version)",
+      "Bash(\"/c/Program Files/nodejs/npm.cmd\" --version)",
+      "Bash(python3 -m venv .venv)",
+      "Bash(.venv/Scripts/pip install -r requirements.txt)",
+      "Bash(.venv/Scripts/ruff check .)",
+      "Bash(.venv/Scripts/ruff check . --fix)"
     ]
   }
 }
