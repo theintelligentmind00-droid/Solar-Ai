@@ -1,4 +1,4 @@
-const BASE_URL = "http://localhost:8000";
+const BASE_URL = "/api";
 
 export interface Planet {
   id: string;
@@ -23,8 +23,30 @@ export interface LogEntry {
 }
 
 export interface Integration {
+  id: string;
   name: string;
   enabled: boolean;
+  scopes: string | null;
+  updated_at: string;
+}
+
+export interface Memory {
+  id: string;
+  planet_id: string | null;
+  key: string;
+  value: string;
+  created_at: string;
+}
+
+export interface Task {
+  id: string;
+  planet_id: string;
+  title: string;
+  description: string | null;
+  status: "todo" | "doing" | "done";
+  priority: "low" | "medium" | "high";
+  created_at: string;
+  completed_at: string | null;
 }
 
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
@@ -59,4 +81,62 @@ export const api = {
     }),
 
   getLogs: () => request<LogEntry[]>("/logs"),
+
+  getMemories: (planetId?: string) =>
+    planetId
+      ? request<Memory[]>(`/memories/${planetId}`)
+      : request<Memory[]>("/memories"),
+
+  deleteMemory: (id: string) =>
+    request<void>(`/memories/${id}`, { method: "DELETE" }),
+
+  getIntegrations: () => request<Integration[]>("/integrations"),
+
+  setIntegration: (name: string, enabled: boolean) =>
+    request<Integration>(`/integrations/${name}`, {
+      method: "PATCH",
+      body: JSON.stringify({ enabled }),
+    }),
+
+  getGreeting: (planetId: string) =>
+    request<{ greeting: string | null; planet_id: string }>(
+      `/greeting/${planetId}`
+    ),
+
+  getTasks: async (planetId: string): Promise<Task[]> => {
+    const r = await fetch(`${BASE_URL}/tasks/${planetId}`);
+    if (!r.ok) throw new Error("Failed to fetch tasks");
+    return r.json() as Promise<Task[]>;
+  },
+
+  createTask: async (planetId: string, title: string, description?: string, priority?: string): Promise<Task> => {
+    const r = await fetch(`${BASE_URL}/tasks/${planetId}`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ title, description: description ?? null, priority: priority ?? "medium" }),
+    });
+    if (!r.ok) throw new Error("Failed to create task");
+    return r.json() as Promise<Task>;
+  },
+
+  updateTask: async (taskId: string, patch: { status?: string; title?: string; description?: string; priority?: string }): Promise<Task> => {
+    const r = await fetch(`${BASE_URL}/tasks/${taskId}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(patch),
+    });
+    if (!r.ok) throw new Error("Failed to update task");
+    return r.json() as Promise<Task>;
+  },
+
+  deleteTask: async (taskId: string): Promise<void> => {
+    const r = await fetch(`${BASE_URL}/tasks/${taskId}`, { method: "DELETE" });
+    if (!r.ok) throw new Error("Failed to delete task");
+  },
+
+  getBriefing: async (planetId: string): Promise<{ planet_id: string; planet_name: string; briefing: string }> => {
+    const r = await fetch(`${BASE_URL}/briefing/${planetId}`);
+    if (!r.ok) throw new Error("Failed to fetch briefing");
+    return r.json() as Promise<{ planet_id: string; planet_name: string; briefing: string }>;
+  },
 };

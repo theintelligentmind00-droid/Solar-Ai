@@ -1,61 +1,162 @@
+@import url('https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@300;400;500;600;700&display=swap');
 @import "tailwindcss";
 
 :root {
-  --sun-color: #FFD700;
-  --space-bg: #0a0a1a;
-  --panel-bg: rgba(15, 15, 35, 0.95);
+  --bg:           #07070f;
+  --panel-bg:     rgba(12, 10, 24, 0.96);
+  --panel-border: rgba(167, 139, 250, 0.12);
+  --sun-color:    #f59e0b;
+  --sun-glow:     rgba(245, 158, 11, 0.4);
+  --violet:       #a78bfa;
+  --violet-dim:   rgba(167, 139, 250, 0.15);
+  --text:         #e2e8f0;
+  --text-muted:   #94a3b8;
+  --text-dim:     rgba(148, 163, 184, 0.45);
 }
 
 body {
-  background-color: var(--space-bg);
-  color: #e2e8f0;
-  font-family: 'Inter', system-ui, sans-serif;
+  background-color: var(--bg);
+  color: var(--text);
+  font-family: 'Space Grotesk', system-ui, sans-serif;
   margin: 0;
   overflow: hidden;
   height: 100vh;
   width: 100vw;
 }
 
-/* Starfield background */
+/* ── Background: nebula + starfield ────────────────── */
 body::before {
   content: '';
   position: fixed;
   inset: 0;
-  background-image:
-    radial-gradient(1px 1px at 20% 30%, rgba(255,255,255,0.6) 0%, transparent 100%),
-    radial-gradient(1px 1px at 80% 10%, rgba(255,255,255,0.4) 0%, transparent 100%),
-    radial-gradient(1px 1px at 50% 70%, rgba(255,255,255,0.5) 0%, transparent 100%),
-    radial-gradient(1px 1px at 10% 80%, rgba(255,255,255,0.3) 0%, transparent 100%),
-    radial-gradient(1px 1px at 90% 60%, rgba(255,255,255,0.4) 0%, transparent 100%),
-    radial-gradient(1px 1px at 35% 50%, rgba(255,255,255,0.3) 0%, transparent 100%),
-    radial-gradient(1px 1px at 70% 40%, rgba(255,255,255,0.5) 0%, transparent 100%),
-    radial-gradient(1px 1px at 60% 85%, rgba(255,255,255,0.3) 0%, transparent 100%);
   pointer-events: none;
   z-index: 0;
+  background-image:
+    radial-gradient(ellipse 65% 45% at 18% 52%, rgba(167, 139, 250, 0.05) 0%, transparent 70%),
+    radial-gradient(ellipse 45% 65% at 82% 28%, rgba(245, 158, 11, 0.03) 0%, transparent 70%),
+    radial-gradient(1px 1px at 12% 18%, rgba(255,255,255,0.80) 0%, transparent 100%),
+    radial-gradient(1px 1px at 82% 8%,  rgba(255,255,255,0.60) 0%, transparent 100%),
+    radial-gradient(1px 1px at 47% 72%, rgba(255,255,255,0.70) 0%, transparent 100%),
+    radial-gradient(1px 1px at 9%  85%, rgba(255,255,255,0.50) 0%, transparent 100%),
+    radial-gradient(1px 1px at 91% 55%, rgba(255,255,255,0.60) 0%, transparent 100%),
+    radial-gradient(1px 1px at 33% 45%, rgba(255,255,255,0.50) 0%, transparent 100%),
+    radial-gradient(1px 1px at 68% 38%, rgba(255,255,255,0.70) 0%, transparent 100%),
+    radial-gradient(1px 1px at 58% 90%, rgba(255,255,255,0.50) 0%, transparent 100%),
+    radial-gradient(1px 1px at 25% 60%, rgba(255,255,255,0.40) 0%, transparent 100%),
+    radial-gradient(1px 1px at 74% 22%, rgba(255,255,255,0.60) 0%, transparent 100%),
+    radial-gradient(1px 1px at 41% 13%, rgba(255,255,255,0.55) 0%, transparent 100%),
+    radial-gradient(1px 1px at 63% 55%, rgba(255,255,255,0.40) 0%, transparent 100%),
+    radial-gradient(1px 1px at 88% 42%, rgba(255,255,255,0.55) 0%, transparent 100%),
+    radial-gradient(1px 1px at 5%  30%, rgba(255,255,255,0.45) 0%, transparent 100%),
+    radial-gradient(1px 1px at 77% 68%, rgba(255,255,255,0.40) 0%, transparent 100%),
+    radial-gradient(1px 1px at 19% 94%, rgba(255,255,255,0.50) 0%, transparent 100%),
+    radial-gradient(1px 1px at 52% 4%,  rgba(255,255,255,0.60) 0%, transparent 100%),
+    radial-gradient(1px 1px at 36% 82%, rgba(255,255,255,0.45) 0%, transparent 100%);
 }
 
-/* Planet orbit animation */
-@keyframes orbit {
-  from { transform: rotate(0deg); }
-  to { transform: rotate(360deg); }
+body::after {
+  content: '';
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  z-index: 0;
+  background-image:
+    radial-gradient(2px 2px at 55% 15%, rgba(255,255,240,0.55) 0%, transparent 100%),
+    radial-gradient(2px 2px at 18% 50%, rgba(255,255,240,0.40) 0%, transparent 100%),
+    radial-gradient(2px 2px at 88% 78%, rgba(255,255,240,0.50) 0%, transparent 100%),
+    radial-gradient(2px 2px at 40% 35%, rgba(220,210,255,0.40) 0%, transparent 100%),
+    radial-gradient(2px 2px at 72% 88%, rgba(255,255,240,0.45) 0%, transparent 100%),
+    radial-gradient(2px 2px at 95% 20%, rgba(220,210,255,0.35) 0%, transparent 100%),
+    radial-gradient(3px 3px at 30% 75%, rgba(255,200,100,0.20) 0%, transparent 100%),
+    radial-gradient(3px 3px at 65% 10%, rgba(200,180,255,0.18) 0%, transparent 100%);
 }
 
-.planet-orbit {
-  transform-origin: center center;
-  animation: orbit linear infinite;
-}
+/* ── Keyframes ─────────────────────────────────────── */
 
-/* Sun pulse glow */
 @keyframes sun-pulse {
-  0%, 100% { filter: drop-shadow(0 0 12px #FFD700) drop-shadow(0 0 24px #FF8C00); }
-  50% { filter: drop-shadow(0 0 20px #FFD700) drop-shadow(0 0 40px #FF8C00); }
+  0%, 100% { opacity: 0.85; transform: scale(1); }
+  50%       { opacity: 1.0;  transform: scale(1.04); }
 }
 
-.sun-glow {
-  animation: sun-pulse 3s ease-in-out infinite;
+@keyframes float {
+  0%, 100% { transform: translateY(0px); }
+  50%       { transform: translateY(-5px); }
 }
 
-/* Scrollbar styling */
-::-webkit-scrollbar { width: 4px; }
+@keyframes msg-enter {
+  from { opacity: 0; transform: translateY(10px) scale(0.96); }
+  to   { opacity: 1; transform: translateY(0)    scale(1); }
+}
+
+@keyframes dot-bounce {
+  0%, 80%, 100% { transform: translateY(0);    opacity: 0.4; }
+  40%            { transform: translateY(-5px); opacity: 1;   }
+}
+
+@keyframes twinkle {
+  0%, 100% { opacity: 0.15; transform: scale(0.85); }
+  50%       { opacity: 0.85; transform: scale(1.2); }
+}
+
+@keyframes blink {
+  0%, 100% { opacity: 1; }
+  50%       { opacity: 0; }
+}
+
+@keyframes scan-line {
+  0%   { transform: translateY(-100%); }
+  100% { transform: translateY(100vh); }
+}
+
+@keyframes shooting-star {
+  0%   { transform: translateX(0) translateY(0); opacity: 1; }
+  70%  { opacity: 0.8; }
+  100% { transform: translateX(700px) translateY(700px); opacity: 0; }
+}
+
+@keyframes rocket-launch {
+  0%   { transform: translateX(-50%) translateY(0);      opacity: 1; }
+  15%  { transform: translateX(-50%) translateY(10px);   opacity: 1; }
+  100% { transform: translateX(-50%) translateY(-110vh); opacity: 0.3; }
+}
+
+@keyframes flame-flicker {
+  0%, 100% { transform: scaleX(1)   scaleY(1);   opacity: 0.9; }
+  25%       { transform: scaleX(1.2) scaleY(0.9); opacity: 1; }
+  50%       { transform: scaleX(0.8) scaleY(1.1); opacity: 0.8; }
+  75%       { transform: scaleX(1.1) scaleY(0.95); opacity: 1; }
+}
+
+@keyframes pulse-ring {
+  0%   { transform: scale(1);   opacity: 0.6; }
+  100% { transform: scale(1.8); opacity: 0; }
+}
+
+/* ── Utilities ─────────────────────────────────────── */
+
+.glass {
+  background: var(--panel-bg);
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+  border: 1px solid var(--panel-border);
+}
+
+.glow-sun {
+  text-shadow: 0 0 14px var(--sun-glow), 0 0 35px rgba(245, 158, 11, 0.18);
+}
+
+svg [data-sun] {
+  animation: sun-pulse 4s ease-in-out infinite;
+  transform-origin: center;
+  transform-box: fill-box;
+}
+
+.msg-enter {
+  animation: msg-enter 0.28s cubic-bezier(0.34, 1.4, 0.64, 1);
+}
+
+/* ── Scrollbar ─────────────────────────────────────── */
+::-webkit-scrollbar       { width: 3px; }
 ::-webkit-scrollbar-track { background: transparent; }
-::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.2); border-radius: 2px; }
+::-webkit-scrollbar-thumb { background: rgba(167, 139, 250, 0.2); border-radius: 2px; }
+::-webkit-scrollbar-thumb:hover { background: rgba(167, 139, 250, 0.4); }

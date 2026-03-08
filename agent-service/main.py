@@ -9,9 +9,14 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from db.schema import init_db
+from routes.briefing import router as briefing_router
 from routes.chat import router as chat_router
+from routes.greeting import router as greeting_router
+from routes.integrations import router as integrations_router
 from routes.logs import router as logs_router
+from routes.memories import router as memories_router
 from routes.planets import router as planets_router
+from routes.tasks import router as tasks_router
 
 load_dotenv()
 
@@ -27,11 +32,7 @@ app = FastAPI(title="Solar AI OS Agent Service", version="0.1.0", lifespan=lifes
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=[
-        "tauri://localhost",
-        "http://localhost:1420",  # Tauri dev server
-        "http://localhost:5173",  # Vite dev server fallback
-    ],
+    allow_origins=["*"],
     allow_methods=["*"],
     allow_headers=["*"],
 )
@@ -39,6 +40,11 @@ app.add_middleware(
 app.include_router(chat_router)
 app.include_router(planets_router)
 app.include_router(logs_router)
+app.include_router(memories_router)
+app.include_router(greeting_router)
+app.include_router(integrations_router)
+app.include_router(tasks_router)
+app.include_router(briefing_router)
 
 
 @app.get("/health")
