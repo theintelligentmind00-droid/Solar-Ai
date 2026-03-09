@@ -1,0 +1,2122 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Solar AI OS — The AI that orbits around you.</title>
+<meta name="description" content="Solar AI OS is a local-first personal AI desktop app. Your planets are your projects. Your Sun is your AI. Everything revolves around you.">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@300;400;500;600;700&family=Outfit:wght@300;400;500;600;700;800;900&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+/* ═══════════════════════════════════════
+   CSS RESET & VARIABLES
+   ═══════════════════════════════════════ */
+*, *::before, *::after { margin: 0; padding: 0; box-sizing: border-box; }
+
+:root {
+  --bg-deep: #060818;
+  --bg-card: #0c1029;
+  --bg-card-hover: #111638;
+  --bg-surface: #0a0e24;
+  --gold: #f5a623;
+  --gold-dim: #c4841a;
+  --gold-glow: rgba(245, 166, 35, 0.15);
+  --gold-glow-strong: rgba(245, 166, 35, 0.3);
+  --text-primary: #e8eaf6;
+  --text-secondary: #8a8fb5;
+  --text-dim: #555a7e;
+  --border: rgba(255, 255, 255, 0.06);
+  --border-hover: rgba(245, 166, 35, 0.2);
+  --radius: 14px;
+  --radius-sm: 8px;
+  --radius-lg: 20px;
+  --font-display: 'Outfit', sans-serif;
+  --font-body: 'Space Grotesk', sans-serif;
+  --font-mono: 'JetBrains Mono', monospace;
+}
+
+html { scroll-behavior: smooth; }
+
+body {
+  font-family: var(--font-body);
+  background: var(--bg-deep);
+  color: var(--text-primary);
+  line-height: 1.6;
+  overflow-x: hidden;
+  -webkit-font-smoothing: antialiased;
+}
+
+a { color: inherit; text-decoration: none; }
+button { font-family: inherit; cursor: pointer; border: none; }
+img { max-width: 100%; display: block; }
+
+/* ═══════════════════════════════════════
+   GLOBAL STAR FIELD (covers entire page)
+   ═══════════════════════════════════════ */
+body::before {
+  content: '';
+  position: fixed;
+  top: 0; left: 0;
+  width: 100%; height: 100%;
+  pointer-events: none;
+  z-index: 0;
+  background:
+    radial-gradient(1px 1px at 10% 15%, rgba(255,255,255,0.7), transparent),
+    radial-gradient(1px 1px at 20% 35%, rgba(255,255,255,0.5), transparent),
+    radial-gradient(1.5px 1.5px at 30% 10%, rgba(255,255,255,0.8), transparent),
+    radial-gradient(1px 1px at 40% 60%, rgba(255,255,255,0.4), transparent),
+    radial-gradient(1px 1px at 50% 25%, rgba(255,255,255,0.6), transparent),
+    radial-gradient(1.5px 1.5px at 60% 80%, rgba(255,255,255,0.5), transparent),
+    radial-gradient(1px 1px at 70% 45%, rgba(255,255,255,0.7), transparent),
+    radial-gradient(1px 1px at 80% 70%, rgba(255,255,255,0.4), transparent),
+    radial-gradient(1px 1px at 90% 20%, rgba(255,255,255,0.6), transparent),
+    radial-gradient(1.5px 1.5px at 15% 85%, rgba(255,255,255,0.5), transparent),
+    radial-gradient(1px 1px at 25% 50%, rgba(255,255,255,0.3), transparent),
+    radial-gradient(1px 1px at 35% 75%, rgba(255,255,255,0.6), transparent),
+    radial-gradient(1.5px 1.5px at 45% 5%, rgba(255,255,255,0.8), transparent),
+    radial-gradient(1px 1px at 55% 90%, rgba(255,255,255,0.4), transparent),
+    radial-gradient(1px 1px at 65% 30%, rgba(255,255,255,0.5), transparent),
+    radial-gradient(1px 1px at 75% 55%, rgba(255,255,255,0.7), transparent),
+    radial-gradient(1.5px 1.5px at 85% 15%, rgba(255,255,255,0.6), transparent),
+    radial-gradient(1px 1px at 95% 65%, rgba(255,255,255,0.4), transparent),
+    radial-gradient(1px 1px at 5% 40%, rgba(255,255,255,0.5), transparent),
+    radial-gradient(1px 1px at 12% 72%, rgba(255,255,255,0.3), transparent);
+}
+
+/* Extra star layers for density */
+body::after {
+  content: '';
+  position: fixed;
+  top: 0; left: 0;
+  width: 100%; height: 100%;
+  pointer-events: none;
+  z-index: 0;
+  opacity: 0.6;
+  background:
+    radial-gradient(1px 1px at 3% 8%, rgba(255,255,255,0.5), transparent),
+    radial-gradient(1px 1px at 7% 28%, rgba(255,255,255,0.4), transparent),
+    radial-gradient(1.2px 1.2px at 13% 52%, rgba(255,255,255,0.6), transparent),
+    radial-gradient(1px 1px at 18% 93%, rgba(255,255,255,0.3), transparent),
+    radial-gradient(1px 1px at 22% 18%, rgba(255,255,255,0.5), transparent),
+    radial-gradient(1px 1px at 28% 67%, rgba(255,255,255,0.4), transparent),
+    radial-gradient(1.2px 1.2px at 33% 41%, rgba(255,255,255,0.7), transparent),
+    radial-gradient(1px 1px at 37% 88%, rgba(255,255,255,0.3), transparent),
+    radial-gradient(1px 1px at 42% 14%, rgba(255,255,255,0.5), transparent),
+    radial-gradient(1px 1px at 48% 73%, rgba(255,255,255,0.4), transparent),
+    radial-gradient(1.2px 1.2px at 52% 36%, rgba(255,255,255,0.6), transparent),
+    radial-gradient(1px 1px at 57% 58%, rgba(255,255,255,0.3), transparent),
+    radial-gradient(1px 1px at 62% 3%, rgba(255,255,255,0.5), transparent),
+    radial-gradient(1px 1px at 68% 82%, rgba(255,255,255,0.4), transparent),
+    radial-gradient(1.2px 1.2px at 72% 22%, rgba(255,255,255,0.7), transparent),
+    radial-gradient(1px 1px at 78% 47%, rgba(255,255,255,0.3), transparent),
+    radial-gradient(1px 1px at 82% 91%, rgba(255,255,255,0.5), transparent),
+    radial-gradient(1px 1px at 88% 33%, rgba(255,255,255,0.4), transparent),
+    radial-gradient(1.2px 1.2px at 92% 62%, rgba(255,255,255,0.6), transparent),
+    radial-gradient(1px 1px at 97% 11%, rgba(255,255,255,0.3), transparent),
+    radial-gradient(1px 1px at 2% 55%, rgba(255,255,255,0.4), transparent),
+    radial-gradient(1px 1px at 8% 77%, rgba(255,255,255,0.5), transparent),
+    radial-gradient(1px 1px at 16% 4%, rgba(255,255,255,0.3), transparent),
+    radial-gradient(1.2px 1.2px at 24% 38%, rgba(255,255,255,0.6), transparent),
+    radial-gradient(1px 1px at 31% 95%, rgba(255,255,255,0.4), transparent),
+    radial-gradient(1px 1px at 39% 26%, rgba(255,255,255,0.5), transparent),
+    radial-gradient(1px 1px at 44% 69%, rgba(255,255,255,0.3), transparent),
+    radial-gradient(1px 1px at 53% 12%, rgba(255,255,255,0.4), transparent),
+    radial-gradient(1.2px 1.2px at 59% 48%, rgba(255,255,255,0.7), transparent),
+    radial-gradient(1px 1px at 66% 85%, rgba(255,255,255,0.3), transparent),
+    radial-gradient(1px 1px at 74% 7%, rgba(255,255,255,0.5), transparent),
+    radial-gradient(1px 1px at 79% 59%, rgba(255,255,255,0.4), transparent),
+    radial-gradient(1px 1px at 86% 74%, rgba(255,255,255,0.3), transparent),
+    radial-gradient(1.2px 1.2px at 91% 29%, rgba(255,255,255,0.6), transparent),
+    radial-gradient(1px 1px at 96% 43%, rgba(255,255,255,0.4), transparent);
+}
+
+/* ═══════════════════════════════════════
+   CONTAINER & LAYOUT
+   ═══════════════════════════════════════ */
+.container {
+  max-width: 1200px;
+  margin: 0 auto;
+  padding: 0 24px;
+  position: relative;
+  z-index: 1;
+}
+
+section {
+  position: relative;
+  z-index: 1;
+}
+
+/* ═══════════════════════════════════════
+   SCROLL FADE-IN ANIMATIONS
+   ═══════════════════════════════════════ */
+.fade-in {
+  opacity: 0;
+  transform: translateY(32px);
+  transition: opacity 0.8s cubic-bezier(0.16, 1, 0.3, 1), transform 0.8s cubic-bezier(0.16, 1, 0.3, 1);
+}
+.fade-in.visible {
+  opacity: 1;
+  transform: translateY(0);
+}
+.fade-in-delay-1 { transition-delay: 0.1s; }
+.fade-in-delay-2 { transition-delay: 0.2s; }
+.fade-in-delay-3 { transition-delay: 0.3s; }
+.fade-in-delay-4 { transition-delay: 0.4s; }
+.fade-in-delay-5 { transition-delay: 0.5s; }
+
+/* ═══════════════════════════════════════
+   NAVBAR
+   ═══════════════════════════════════════ */
+.navbar {
+  position: fixed;
+  top: 0; left: 0; right: 0;
+  z-index: 1000;
+  padding: 16px 0;
+  transition: background 0.3s, backdrop-filter 0.3s, border-color 0.3s;
+  border-bottom: 1px solid transparent;
+}
+.navbar.scrolled {
+  background: rgba(6, 8, 24, 0.8);
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
+  border-bottom-color: var(--border);
+}
+.navbar .container {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+.nav-logo {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-family: var(--font-display);
+  font-weight: 700;
+  font-size: 1.15rem;
+  letter-spacing: -0.02em;
+}
+.nav-logo-icon {
+  width: 32px; height: 32px;
+  border-radius: 50%;
+  background: radial-gradient(circle at 40% 40%, #ffe082, var(--gold), #c4841a);
+  box-shadow: 0 0 20px rgba(245, 166, 35, 0.4), 0 0 60px rgba(245, 166, 35, 0.15);
+  position: relative;
+}
+.nav-logo-icon::after {
+  content: '';
+  position: absolute;
+  inset: -3px;
+  border-radius: 50%;
+  background: radial-gradient(circle, rgba(245, 166, 35, 0.2), transparent 70%);
+}
+.nav-links {
+  display: flex;
+  align-items: center;
+  gap: 32px;
+  list-style: none;
+}
+.nav-links a {
+  font-size: 0.9rem;
+  color: var(--text-secondary);
+  transition: color 0.2s;
+  font-weight: 400;
+}
+.nav-links a:hover { color: var(--text-primary); }
+.nav-cta {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 22px;
+  background: var(--gold);
+  color: #0a0a0a;
+  border-radius: 100px;
+  font-size: 0.88rem;
+  font-weight: 600;
+  transition: all 0.3s;
+  box-shadow: 0 0 20px rgba(245, 166, 35, 0.25);
+}
+.nav-cta:hover {
+  background: #ffc14d;
+  box-shadow: 0 0 30px rgba(245, 166, 35, 0.4);
+  transform: translateY(-1px);
+}
+
+/* Hamburger */
+.hamburger {
+  display: none;
+  flex-direction: column;
+  gap: 5px;
+  background: none;
+  padding: 4px;
+}
+.hamburger span {
+  display: block;
+  width: 24px; height: 2px;
+  background: var(--text-primary);
+  border-radius: 2px;
+  transition: all 0.3s;
+}
+.hamburger.active span:nth-child(1) { transform: rotate(45deg) translate(5px, 5px); }
+.hamburger.active span:nth-child(2) { opacity: 0; }
+.hamburger.active span:nth-child(3) { transform: rotate(-45deg) translate(5px, -5px); }
+
+/* Mobile nav */
+.mobile-nav {
+  display: none;
+  position: fixed;
+  top: 0; left: 0; right: 0; bottom: 0;
+  background: rgba(6, 8, 24, 0.95);
+  backdrop-filter: blur(24px);
+  z-index: 999;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 28px;
+}
+.mobile-nav.open { display: flex; }
+.mobile-nav a {
+  font-family: var(--font-display);
+  font-size: 1.5rem;
+  font-weight: 600;
+  color: var(--text-secondary);
+  transition: color 0.2s;
+}
+.mobile-nav a:hover { color: var(--gold); }
+
+/* ═══════════════════════════════════════
+   HERO
+   ═══════════════════════════════════════ */
+.hero {
+  min-height: 100vh;
+  display: flex;
+  align-items: center;
+  padding: 120px 0 80px;
+  position: relative;
+  overflow: hidden;
+}
+
+/* Nebula glow behind hero */
+.hero::before {
+  content: '';
+  position: absolute;
+  top: 50%; left: 50%;
+  transform: translate(-50%, -50%);
+  width: 900px; height: 900px;
+  background: radial-gradient(ellipse, rgba(245, 166, 35, 0.06) 0%, rgba(245, 166, 35, 0.02) 40%, transparent 70%);
+  pointer-events: none;
+}
+.hero::after {
+  content: '';
+  position: absolute;
+  top: 20%; right: 10%;
+  width: 600px; height: 600px;
+  background: radial-gradient(ellipse, rgba(88, 60, 200, 0.05) 0%, transparent 60%);
+  pointer-events: none;
+}
+
+.hero .container {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 60px;
+  align-items: center;
+}
+
+.hero-content { max-width: 560px; }
+
+.hero-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 16px 6px 8px;
+  background: rgba(245, 166, 35, 0.08);
+  border: 1px solid rgba(245, 166, 35, 0.2);
+  border-radius: 100px;
+  font-size: 0.82rem;
+  color: var(--gold);
+  margin-bottom: 28px;
+  font-weight: 500;
+}
+.hero-badge-dot {
+  width: 8px; height: 8px;
+  background: var(--gold);
+  border-radius: 50%;
+  animation: pulse-dot 2s infinite;
+}
+@keyframes pulse-dot {
+  0%, 100% { box-shadow: 0 0 0 0 rgba(245, 166, 35, 0.4); }
+  50% { box-shadow: 0 0 0 6px rgba(245, 166, 35, 0); }
+}
+
+.hero h1 {
+  font-family: var(--font-display);
+  font-size: clamp(2.8rem, 5.5vw, 4.2rem);
+  font-weight: 800;
+  line-height: 1.08;
+  letter-spacing: -0.035em;
+  margin-bottom: 20px;
+}
+.hero h1 .gold {
+  background: linear-gradient(135deg, #ffe082, var(--gold), #e09000);
+  -webkit-background-clip: text;
+  background-clip: text;
+  -webkit-text-fill-color: transparent;
+}
+
+.hero-sub {
+  font-size: 1.1rem;
+  color: var(--text-secondary);
+  line-height: 1.7;
+  margin-bottom: 36px;
+  max-width: 480px;
+}
+
+.hero-buttons {
+  display: flex;
+  gap: 14px;
+  margin-bottom: 32px;
+  flex-wrap: wrap;
+}
+
+.btn-primary {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  padding: 14px 28px;
+  background: var(--gold);
+  color: #0a0a0a;
+  border-radius: 12px;
+  font-weight: 600;
+  font-size: 0.95rem;
+  transition: all 0.3s;
+  box-shadow: 0 0 30px rgba(245, 166, 35, 0.2), inset 0 1px 0 rgba(255,255,255,0.2);
+}
+.btn-primary:hover {
+  background: #ffc14d;
+  transform: translateY(-2px);
+  box-shadow: 0 0 40px rgba(245, 166, 35, 0.35), inset 0 1px 0 rgba(255,255,255,0.2);
+}
+
+.btn-secondary {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  padding: 14px 28px;
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid var(--border);
+  color: var(--text-primary);
+  border-radius: 12px;
+  font-weight: 500;
+  font-size: 0.95rem;
+  transition: all 0.3s;
+}
+.btn-secondary:hover {
+  background: rgba(255, 255, 255, 0.08);
+  border-color: rgba(255, 255, 255, 0.12);
+  transform: translateY(-2px);
+}
+
+.btn-icon {
+  width: 18px; height: 18px;
+  display: flex; align-items: center; justify-content: center;
+}
+
+.hero-trust {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 0.82rem;
+  color: var(--text-dim);
+  flex-wrap: wrap;
+}
+.hero-trust-sep {
+  width: 3px; height: 3px;
+  background: var(--text-dim);
+  border-radius: 50%;
+}
+
+/* ═══════════════════════════════════════
+   SOLAR SYSTEM ANIMATION (Hero Right)
+   ═══════════════════════════════════════ */
+.solar-system-hero {
+  position: relative;
+  width: 100%;
+  max-width: 480px;
+  aspect-ratio: 1;
+  margin: 0 auto;
+}
+.solar-container {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+/* Sun */
+.sun-hero {
+  width: 72px; height: 72px;
+  border-radius: 50%;
+  background: radial-gradient(circle at 35% 35%, #fff7e0, #ffe082, var(--gold), #c4841a);
+  box-shadow:
+    0 0 40px rgba(245, 166, 35, 0.5),
+    0 0 80px rgba(245, 166, 35, 0.25),
+    0 0 120px rgba(245, 166, 35, 0.1);
+  position: relative;
+  z-index: 10;
+  animation: sun-pulse 4s ease-in-out infinite;
+}
+@keyframes sun-pulse {
+  0%, 100% { box-shadow: 0 0 40px rgba(245,166,35,0.5), 0 0 80px rgba(245,166,35,0.25), 0 0 120px rgba(245,166,35,0.1); }
+  50% { box-shadow: 0 0 50px rgba(245,166,35,0.6), 0 0 100px rgba(245,166,35,0.3), 0 0 160px rgba(245,166,35,0.15); }
+}
+
+/* Orbits */
+.orbit {
+  position: absolute;
+  border: 1px solid rgba(255, 255, 255, 0.06);
+  border-radius: 50%;
+  top: 50%; left: 50%;
+}
+.orbit-1 { width: 180px; height: 180px; margin: -90px 0 0 -90px; }
+.orbit-2 { width: 280px; height: 280px; margin: -140px 0 0 -140px; }
+.orbit-3 { width: 380px; height: 380px; margin: -190px 0 0 -190px; }
+
+/* Planets */
+.planet {
+  position: absolute;
+  border-radius: 50%;
+  z-index: 5;
+}
+
+.planet-1 {
+  width: 20px; height: 20px;
+  background: radial-gradient(circle at 35% 35%, #90caf9, #42a5f5, #1565c0);
+  box-shadow: 0 0 12px rgba(66, 165, 245, 0.5);
+  animation: orbit-1-spin 8s linear infinite;
+}
+.planet-2 {
+  width: 26px; height: 26px;
+  background: radial-gradient(circle at 35% 35%, #ef9a9a, #ef5350, #c62828);
+  box-shadow: 0 0 14px rgba(239, 83, 80, 0.5);
+  animation: orbit-2-spin 14s linear infinite;
+}
+.planet-3 {
+  width: 22px; height: 22px;
+  background: radial-gradient(circle at 35% 35%, #a5d6a7, #66bb6a, #2e7d32);
+  box-shadow: 0 0 12px rgba(102, 187, 106, 0.5);
+  animation: orbit-3-spin 22s linear infinite;
+}
+
+/* Planet labels */
+.planet-label {
+  position: absolute;
+  font-size: 0.65rem;
+  font-weight: 500;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  white-space: nowrap;
+  color: var(--text-dim);
+  pointer-events: none;
+}
+.planet-1 .planet-label { top: -20px; left: 50%; transform: translateX(-50%); }
+.planet-2 .planet-label { top: -20px; left: 50%; transform: translateX(-50%); }
+.planet-3 .planet-label { top: -20px; left: 50%; transform: translateX(-50%); }
+
+@keyframes orbit-1-spin {
+  from { transform: rotate(0deg) translateX(90px) rotate(0deg); }
+  to { transform: rotate(360deg) translateX(90px) rotate(-360deg); }
+}
+@keyframes orbit-2-spin {
+  from { transform: rotate(60deg) translateX(140px) rotate(-60deg); }
+  to { transform: rotate(420deg) translateX(140px) rotate(-420deg); }
+}
+@keyframes orbit-3-spin {
+  from { transform: rotate(180deg) translateX(190px) rotate(-180deg); }
+  to { transform: rotate(540deg) translateX(190px) rotate(-540deg); }
+}
+
+/* ═══════════════════════════════════════
+   SECTION STYLES
+   ═══════════════════════════════════════ */
+.section-tag {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 0.78rem;
+  font-weight: 600;
+  color: var(--gold);
+  text-transform: uppercase;
+  letter-spacing: 0.12em;
+  margin-bottom: 16px;
+  font-family: var(--font-mono);
+}
+.section-tag::before {
+  content: '';
+  width: 20px; height: 1px;
+  background: var(--gold);
+}
+
+.section-title {
+  font-family: var(--font-display);
+  font-size: clamp(2rem, 4vw, 3rem);
+  font-weight: 800;
+  letter-spacing: -0.03em;
+  line-height: 1.1;
+  margin-bottom: 16px;
+}
+
+.section-sub {
+  font-size: 1.05rem;
+  color: var(--text-secondary);
+  max-width: 560px;
+  line-height: 1.65;
+}
+
+.section-header {
+  text-align: center;
+  margin-bottom: 64px;
+}
+.section-header .section-sub {
+  margin: 0 auto;
+}
+
+/* ═══════════════════════════════════════
+   FEATURES GRID
+   ═══════════════════════════════════════ */
+#features {
+  padding: 120px 0;
+}
+
+.features-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 20px;
+}
+
+.feature-card {
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 32px 28px;
+  transition: all 0.4s cubic-bezier(0.16, 1, 0.3, 1);
+  position: relative;
+  overflow: hidden;
+}
+.feature-card::before {
+  content: '';
+  position: absolute;
+  top: 0; left: 0; right: 0;
+  height: 1px;
+  background: linear-gradient(90deg, transparent, rgba(245, 166, 35, 0), transparent);
+  transition: background 0.4s;
+}
+.feature-card:hover {
+  background: var(--bg-card-hover);
+  border-color: var(--border-hover);
+  transform: translateY(-4px);
+}
+.feature-card:hover::before {
+  background: linear-gradient(90deg, transparent, rgba(245, 166, 35, 0.4), transparent);
+}
+
+.feature-icon {
+  width: 48px; height: 48px;
+  border-radius: 12px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 1.4rem;
+  margin-bottom: 20px;
+  background: rgba(245, 166, 35, 0.08);
+  border: 1px solid rgba(245, 166, 35, 0.12);
+}
+
+.feature-card h3 {
+  font-family: var(--font-display);
+  font-size: 1.15rem;
+  font-weight: 700;
+  margin-bottom: 10px;
+  letter-spacing: -0.01em;
+}
+
+.feature-card p {
+  font-size: 0.9rem;
+  color: var(--text-secondary);
+  line-height: 1.6;
+}
+
+/* ═══════════════════════════════════════
+   APP MOCKUP
+   ═══════════════════════════════════════ */
+#mockup {
+  padding: 80px 0 120px;
+}
+
+.mockup-frame {
+  max-width: 960px;
+  margin: 0 auto;
+  background: linear-gradient(180deg, #0e1234, #080c22);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 20px;
+  padding: 2px;
+  box-shadow:
+    0 40px 120px rgba(0, 0, 0, 0.5),
+    0 0 0 1px rgba(255, 255, 255, 0.03),
+    inset 0 1px 0 rgba(255, 255, 255, 0.05);
+  position: relative;
+  overflow: hidden;
+}
+
+.mockup-titlebar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 14px 20px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+}
+.mockup-dot {
+  width: 12px; height: 12px;
+  border-radius: 50%;
+}
+.mockup-dot:nth-child(1) { background: #ff5f57; }
+.mockup-dot:nth-child(2) { background: #ffbd2e; }
+.mockup-dot:nth-child(3) { background: #28c940; }
+.mockup-titlebar-text {
+  margin-left: 12px;
+  font-size: 0.78rem;
+  color: var(--text-dim);
+  font-family: var(--font-mono);
+}
+
+.mockup-content {
+  display: grid;
+  grid-template-columns: 1fr 320px;
+  height: 420px;
+  position: relative;
+}
+
+/* Solar system mockup */
+.mockup-solar {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+}
+
+.mockup-sun {
+  width: 56px; height: 56px;
+  border-radius: 50%;
+  background: radial-gradient(circle at 35% 35%, #fff7e0, #ffe082, var(--gold));
+  box-shadow: 0 0 40px rgba(245, 166, 35, 0.4), 0 0 80px rgba(245, 166, 35, 0.15);
+  z-index: 10;
+  position: relative;
+}
+.mockup-sun-label {
+  position: absolute;
+  bottom: -22px;
+  left: 50%;
+  transform: translateX(-50%);
+  font-size: 0.65rem;
+  color: var(--gold);
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+  white-space: nowrap;
+}
+
+/* Mockup orbiting planets */
+.m-orbit {
+  position: absolute;
+  border: 1px dashed rgba(255, 255, 255, 0.05);
+  border-radius: 50%;
+  top: 50%; left: 50%;
+}
+.m-orbit-1 { width: 140px; height: 140px; margin: -70px 0 0 -70px; }
+.m-orbit-2 { width: 220px; height: 220px; margin: -110px 0 0 -110px; }
+.m-orbit-3 { width: 300px; height: 300px; margin: -150px 0 0 -150px; }
+
+.m-planet {
+  position: absolute;
+  top: 50%; left: 50%;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.m-planet-inner {
+  border-radius: 50%;
+  position: relative;
+}
+
+.m-planet-tag {
+  position: absolute;
+  top: calc(100% + 6px);
+  left: 50%;
+  transform: translateX(-50%);
+  font-size: 0.6rem;
+  font-weight: 500;
+  white-space: nowrap;
+  color: var(--text-dim);
+  letter-spacing: 0.04em;
+}
+
+/* Individual mockup planets with orbit animations */
+.mp-work {
+  animation: m-orbit-1 10s linear infinite;
+}
+.mp-work .m-planet-inner {
+  width: 18px; height: 18px;
+  background: radial-gradient(circle at 35% 35%, #90caf9, #1e88e5);
+  box-shadow: 0 0 10px rgba(30, 136, 229, 0.4);
+}
+
+.mp-health {
+  animation: m-orbit-2 16s linear infinite;
+}
+.mp-health .m-planet-inner {
+  width: 22px; height: 22px;
+  background: radial-gradient(circle at 35% 35%, #a5d6a7, #43a047);
+  box-shadow: 0 0 10px rgba(67, 160, 71, 0.4);
+}
+
+.mp-finance {
+  animation: m-orbit-2 16s linear infinite reverse;
+}
+.mp-finance .m-planet-inner {
+  width: 16px; height: 16px;
+  background: radial-gradient(circle at 35% 35%, #ffe082, #f9a825);
+  box-shadow: 0 0 10px rgba(249, 168, 37, 0.4);
+}
+
+.mp-travel {
+  animation: m-orbit-3 24s linear infinite;
+}
+.mp-travel .m-planet-inner {
+  width: 20px; height: 20px;
+  background: radial-gradient(circle at 35% 35%, #ce93d8, #8e24aa);
+  box-shadow: 0 0 10px rgba(142, 36, 170, 0.4);
+}
+
+.mp-projects {
+  animation: m-orbit-3 24s linear infinite reverse;
+}
+.mp-projects .m-planet-inner {
+  width: 14px; height: 14px;
+  background: radial-gradient(circle at 35% 35%, #ef9a9a, #e53935);
+  box-shadow: 0 0 10px rgba(229, 57, 53, 0.4);
+}
+
+@keyframes m-orbit-1 {
+  from { transform: rotate(0deg) translateX(70px) rotate(0deg); }
+  to { transform: rotate(360deg) translateX(70px) rotate(-360deg); }
+}
+@keyframes m-orbit-2 {
+  from { transform: rotate(90deg) translateX(110px) rotate(-90deg); }
+  to { transform: rotate(450deg) translateX(110px) rotate(-450deg); }
+}
+@keyframes m-orbit-3 {
+  from { transform: rotate(200deg) translateX(150px) rotate(-200deg); }
+  to { transform: rotate(560deg) translateX(150px) rotate(-560deg); }
+}
+
+/* Chat panel mockup */
+.mockup-chat {
+  border-left: 1px solid rgba(255, 255, 255, 0.05);
+  padding: 20px;
+  display: flex;
+  flex-direction: column;
+  background: rgba(0, 0, 0, 0.15);
+}
+
+.chat-header {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding-bottom: 16px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+  margin-bottom: 16px;
+}
+.chat-header-dot {
+  width: 10px; height: 10px;
+  border-radius: 50%;
+  background: radial-gradient(circle, #90caf9, #1e88e5);
+  box-shadow: 0 0 8px rgba(30, 136, 229, 0.4);
+}
+.chat-header-title {
+  font-size: 0.82rem;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+.chat-header-sub {
+  font-size: 0.7rem;
+  color: var(--text-dim);
+}
+
+.chat-messages {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  overflow: hidden;
+}
+
+.chat-msg {
+  padding: 10px 14px;
+  border-radius: 12px;
+  font-size: 0.78rem;
+  line-height: 1.55;
+  max-width: 90%;
+  animation: chat-fade 0.5s ease both;
+}
+.chat-msg-user {
+  background: rgba(245, 166, 35, 0.1);
+  border: 1px solid rgba(245, 166, 35, 0.15);
+  color: var(--text-primary);
+  align-self: flex-end;
+}
+.chat-msg-ai {
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid rgba(255, 255, 255, 0.06);
+  color: var(--text-secondary);
+  align-self: flex-start;
+}
+
+@keyframes chat-fade {
+  from { opacity: 0; transform: translateY(8px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+.chat-input {
+  margin-top: auto;
+  padding-top: 12px;
+  border-top: 1px solid rgba(255, 255, 255, 0.05);
+}
+.chat-input-box {
+  width: 100%;
+  padding: 10px 14px;
+  background: rgba(255, 255, 255, 0.03);
+  border: 1px solid rgba(255, 255, 255, 0.06);
+  border-radius: 10px;
+  font-size: 0.75rem;
+  color: var(--text-dim);
+  font-family: var(--font-body);
+}
+
+/* ═══════════════════════════════════════
+   INTEGRATIONS
+   ═══════════════════════════════════════ */
+#integrations {
+  padding: 120px 0;
+}
+
+.integrations-grid {
+  display: grid;
+  grid-template-columns: repeat(6, 1fr);
+  gap: 16px;
+}
+
+.integration-card {
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 28px 16px;
+  text-align: center;
+  transition: all 0.4s cubic-bezier(0.16, 1, 0.3, 1);
+}
+.integration-card:hover {
+  background: var(--bg-card-hover);
+  border-color: var(--border-hover);
+  transform: translateY(-4px);
+}
+.integration-card.dimmed {
+  opacity: 0.4;
+}
+.integration-card.dimmed:hover {
+  opacity: 0.6;
+}
+
+.integration-icon {
+  width: 48px; height: 48px;
+  margin: 0 auto 14px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.integration-icon svg {
+  width: 32px; height: 32px;
+}
+
+.integration-card h4 {
+  font-size: 0.82rem;
+  font-weight: 500;
+  color: var(--text-secondary);
+}
+
+/* ═══════════════════════════════════════
+   HOW IT WORKS
+   ═══════════════════════════════════════ */
+#how-it-works {
+  padding: 120px 0;
+}
+
+.steps-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 24px;
+  position: relative;
+}
+/* Connector line */
+.steps-grid::before {
+  content: '';
+  position: absolute;
+  top: 44px;
+  left: calc(16.67% + 12px);
+  right: calc(16.67% + 12px);
+  height: 1px;
+  background: linear-gradient(90deg, rgba(245,166,35,0.3), rgba(245,166,35,0.1), rgba(245,166,35,0.3));
+}
+
+.step-card {
+  text-align: center;
+  padding: 0 16px;
+}
+
+.step-number {
+  width: 48px; height: 48px;
+  border-radius: 50%;
+  background: rgba(245, 166, 35, 0.1);
+  border: 1px solid rgba(245, 166, 35, 0.25);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin: 0 auto 24px;
+  font-family: var(--font-mono);
+  font-size: 1rem;
+  font-weight: 600;
+  color: var(--gold);
+  position: relative;
+  z-index: 2;
+}
+
+.step-card h3 {
+  font-family: var(--font-display);
+  font-size: 1.15rem;
+  font-weight: 700;
+  margin-bottom: 10px;
+}
+
+.step-card p {
+  font-size: 0.9rem;
+  color: var(--text-secondary);
+  line-height: 1.6;
+}
+
+/* ═══════════════════════════════════════
+   DOWNLOAD SECTION
+   ═══════════════════════════════════════ */
+#download {
+  padding: 120px 0;
+  position: relative;
+}
+#download::before {
+  content: '';
+  position: absolute;
+  top: 0; left: 50%;
+  transform: translateX(-50%);
+  width: 600px; height: 400px;
+  background: radial-gradient(ellipse, rgba(245, 166, 35, 0.04), transparent 70%);
+  pointer-events: none;
+}
+
+.download-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 20px;
+  max-width: 800px;
+  margin: 0 auto 32px;
+}
+
+.download-card {
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 32px 24px;
+  text-align: center;
+  transition: all 0.4s cubic-bezier(0.16, 1, 0.3, 1);
+  cursor: pointer;
+  position: relative;
+  overflow: hidden;
+}
+.download-card::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(180deg, rgba(245, 166, 35, 0.03), transparent);
+  opacity: 0;
+  transition: opacity 0.4s;
+}
+.download-card:hover {
+  border-color: var(--border-hover);
+  transform: translateY(-4px);
+}
+.download-card:hover::after { opacity: 1; }
+
+.download-icon {
+  width: 48px; height: 48px;
+  margin: 0 auto 16px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  position: relative;
+  z-index: 1;
+}
+.download-icon svg {
+  width: 36px; height: 36px;
+  fill: var(--text-primary);
+}
+
+.download-card h4 {
+  font-family: var(--font-display);
+  font-size: 1rem;
+  font-weight: 700;
+  margin-bottom: 6px;
+  position: relative;
+  z-index: 1;
+}
+
+.download-version {
+  font-size: 0.78rem;
+  color: var(--text-dim);
+  font-family: var(--font-mono);
+  position: relative;
+  z-index: 1;
+}
+
+.download-note {
+  text-align: center;
+  font-size: 0.85rem;
+  color: var(--text-dim);
+}
+
+/* ═══════════════════════════════════════
+   WAITLIST
+   ═══════════════════════════════════════ */
+#waitlist {
+  padding: 120px 0;
+  position: relative;
+}
+#waitlist::before {
+  content: '';
+  position: absolute;
+  top: 50%; left: 50%;
+  transform: translate(-50%, -50%);
+  width: 700px; height: 500px;
+  background: radial-gradient(ellipse, rgba(245,166,35,0.06), transparent 70%);
+  pointer-events: none;
+}
+.waitlist-inner {
+  max-width: 560px;
+  margin: 0 auto;
+  text-align: center;
+  position: relative;
+  z-index: 1;
+}
+.waitlist-inner h2 {
+  font-family: var(--font-display);
+  font-size: clamp(2rem, 4vw, 3rem);
+  font-weight: 800;
+  line-height: 1.1;
+  margin-bottom: 16px;
+}
+.waitlist-inner p {
+  font-size: 1.05rem;
+  color: var(--text-secondary);
+  margin-bottom: 40px;
+  line-height: 1.6;
+}
+.waitlist-spots {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  background: rgba(245,166,35,0.08);
+  border: 1px solid rgba(245,166,35,0.2);
+  border-radius: 100px;
+  padding: 6px 16px;
+  font-size: 0.8rem;
+  color: var(--gold);
+  font-weight: 600;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  margin-bottom: 28px;
+}
+.waitlist-spots-dot {
+  width: 6px; height: 6px;
+  background: var(--gold);
+  border-radius: 50%;
+  animation: pulse-dot 2s ease-in-out infinite;
+}
+@keyframes pulse-dot {
+  0%, 100% { opacity: 1; transform: scale(1); }
+  50% { opacity: 0.5; transform: scale(0.8); }
+}
+.waitlist-form {
+  display: flex;
+  gap: 10px;
+  max-width: 460px;
+  margin: 0 auto 16px;
+}
+.waitlist-input {
+  flex: 1;
+  background: rgba(255,255,255,0.04);
+  border: 1px solid rgba(255,255,255,0.1);
+  border-radius: 12px;
+  padding: 14px 18px;
+  color: var(--text-primary);
+  font-family: var(--font-body);
+  font-size: 0.95rem;
+  outline: none;
+  transition: border-color 0.2s;
+}
+.waitlist-input::placeholder { color: var(--text-dim); }
+.waitlist-input:focus { border-color: rgba(245,166,35,0.4); }
+.waitlist-btn {
+  background: var(--gold);
+  color: #0a0508;
+  font-weight: 700;
+  font-size: 0.9rem;
+  padding: 14px 24px;
+  border-radius: 12px;
+  border: none;
+  cursor: pointer;
+  font-family: var(--font-body);
+  white-space: nowrap;
+  transition: all 0.2s;
+}
+.waitlist-btn:hover { background: #f0b429; transform: translateY(-1px); }
+.waitlist-btn:disabled { opacity: 0.6; cursor: not-allowed; transform: none; }
+.waitlist-note {
+  font-size: 0.8rem;
+  color: var(--text-dim);
+}
+.waitlist-success {
+  display: none;
+  background: rgba(34,197,94,0.08);
+  border: 1px solid rgba(34,197,94,0.2);
+  border-radius: 12px;
+  padding: 16px 24px;
+  color: #86efac;
+  font-size: 0.95rem;
+  max-width: 460px;
+  margin: 0 auto;
+}
+.waitlist-social {
+  display: flex;
+  justify-content: center;
+  gap: 24px;
+  margin-top: 48px;
+}
+.waitlist-social a {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--text-secondary);
+  font-size: 0.85rem;
+  transition: color 0.2s;
+}
+.waitlist-social a:hover { color: var(--text-primary); }
+
+/* ═══════════════════════════════════════
+   FOOTER
+   ═══════════════════════════════════════ */
+.footer {
+  padding: 48px 0;
+  border-top: 1px solid var(--border);
+  position: relative;
+  z-index: 1;
+}
+.footer .container {
+  display: grid;
+  grid-template-columns: 1fr auto 1fr;
+  align-items: center;
+  gap: 32px;
+}
+
+.footer-brand {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+.footer-sun {
+  width: 24px; height: 24px;
+  border-radius: 50%;
+  background: radial-gradient(circle at 40% 40%, #ffe082, var(--gold));
+  box-shadow: 0 0 12px rgba(245, 166, 35, 0.3);
+}
+.footer-brand-text h5 {
+  font-family: var(--font-display);
+  font-size: 0.9rem;
+  font-weight: 700;
+}
+.footer-brand-text p {
+  font-size: 0.75rem;
+  color: var(--text-dim);
+}
+
+.footer-links {
+  display: flex;
+  gap: 28px;
+}
+.footer-links a {
+  font-size: 0.82rem;
+  color: var(--text-dim);
+  transition: color 0.2s;
+}
+.footer-links a:hover { color: var(--text-secondary); }
+
+.footer-copy {
+  text-align: right;
+  font-size: 0.75rem;
+  color: var(--text-dim);
+  line-height: 1.5;
+}
+
+/* ═══════════════════════════════════════
+   ROCKET ANIMATION
+   ═══════════════════════════════════════ */
+.rocket-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 10000;
+  pointer-events: none;
+  overflow: hidden;
+  display: none;
+}
+.rocket-overlay.active {
+  display: block;
+}
+
+.rocket {
+  position: absolute;
+  bottom: -200px;
+  left: 50%;
+  transform: translateX(-50%);
+  font-size: 0;
+  visibility: hidden;
+}
+.rocket-overlay.active .rocket {
+  visibility: visible;
+}
+
+.rocket-body {
+  position: relative;
+  width: 40px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+}
+
+/* Rocket SVG drawn in CSS */
+.rocket-nose {
+  width: 0; height: 0;
+  border-left: 20px solid transparent;
+  border-right: 20px solid transparent;
+  border-bottom: 36px solid #e0e0e0;
+  position: relative;
+}
+.rocket-nose::after {
+  content: '';
+  position: absolute;
+  bottom: -36px;
+  left: -20px;
+  width: 40px;
+  height: 36px;
+  background: linear-gradient(180deg, #f5f5f5, #ccc);
+  clip-path: polygon(50% 0%, 0% 100%, 100% 100%);
+}
+
+.rocket-fuselage {
+  width: 40px;
+  height: 64px;
+  background: linear-gradient(90deg, #bbb, #f5f5f5 30%, #f5f5f5 70%, #bbb);
+  position: relative;
+}
+.rocket-window {
+  position: absolute;
+  top: 12px;
+  left: 50%;
+  transform: translateX(-50%);
+  width: 16px; height: 16px;
+  border-radius: 50%;
+  background: radial-gradient(circle at 40% 40%, #64b5f6, #1565c0);
+  border: 2px solid #999;
+}
+
+.rocket-fins {
+  position: relative;
+  width: 64px;
+  height: 28px;
+}
+.rocket-fin-l, .rocket-fin-r {
+  position: absolute;
+  bottom: 0;
+  width: 0; height: 0;
+}
+.rocket-fin-l {
+  left: 0;
+  border-right: 16px solid #e53935;
+  border-bottom: 28px solid transparent;
+  border-top: 0px solid transparent;
+}
+.rocket-fin-r {
+  right: 0;
+  border-left: 16px solid #e53935;
+  border-bottom: 28px solid transparent;
+}
+.rocket-fin-center {
+  position: absolute;
+  left: 16px;
+  width: 32px;
+  height: 28px;
+  background: linear-gradient(90deg, #c62828, #e53935 30%, #e53935 70%, #c62828);
+  clip-path: polygon(0 0, 100% 0, 85% 100%, 15% 100%);
+}
+
+/* Flame */
+.rocket-flame {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  margin-top: -2px;
+}
+.flame-core {
+  width: 18px;
+  height: 45px;
+  background: linear-gradient(180deg, #fff, #ffe082, #ff9800, #ff5722);
+  border-radius: 0 0 50% 50%;
+  filter: blur(1px);
+  animation: none;
+}
+.flame-outer {
+  width: 28px;
+  height: 60px;
+  background: linear-gradient(180deg, rgba(255,152,0,0.6), rgba(255,87,34,0.3), transparent);
+  border-radius: 0 0 50% 50%;
+  margin-top: -40px;
+  filter: blur(3px);
+  animation: none;
+}
+.rocket-overlay.active .flame-core {
+  animation: flame-flicker 0.1s infinite alternate;
+}
+.rocket-overlay.active .flame-outer {
+  animation: flame-flicker-outer 0.15s infinite alternate;
+}
+
+@keyframes flame-flicker {
+  from { height: 42px; width: 16px; }
+  to { height: 50px; width: 20px; }
+}
+@keyframes flame-flicker-outer {
+  from { height: 55px; width: 26px; }
+  to { height: 65px; width: 30px; }
+}
+
+/* Rocket particles */
+.rocket-particle {
+  position: absolute;
+  width: 4px; height: 4px;
+  background: var(--gold);
+  border-radius: 50%;
+  opacity: 0;
+}
+
+.rocket-launch {
+  animation: rocket-fly 2s cubic-bezier(0.2, 0, 0, 1) forwards;
+}
+
+@keyframes rocket-fly {
+  0% { bottom: -200px; }
+  15% { bottom: 10%; }
+  100% { bottom: 120vh; }
+}
+
+/* Smoke trail */
+.smoke-puff {
+  position: absolute;
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.15);
+  filter: blur(8px);
+  animation: smoke-rise 1.5s ease-out forwards;
+}
+
+@keyframes smoke-rise {
+  0% { opacity: 0.6; transform: scale(0.5) translateY(0); }
+  100% { opacity: 0; transform: scale(3) translateY(-60px); }
+}
+
+/* Screen shake */
+@keyframes screen-shake {
+  0%, 100% { transform: translateX(0); }
+  10% { transform: translateX(-3px) translateY(1px); }
+  20% { transform: translateX(3px) translateY(-1px); }
+  30% { transform: translateX(-2px); }
+  40% { transform: translateX(2px) translateY(1px); }
+  50% { transform: translateX(-1px); }
+  60% { transform: translateX(1px); }
+}
+.shake {
+  animation: screen-shake 0.6s ease-out;
+}
+
+/* ═══════════════════════════════════════
+   RESPONSIVE
+   ═══════════════════════════════════════ */
+@media (max-width: 1024px) {
+  .hero .container { grid-template-columns: 1fr; text-align: center; }
+  .hero-content { max-width: 100%; margin: 0 auto; }
+  .hero-sub { margin: 0 auto 36px; }
+  .hero-buttons { justify-content: center; }
+  .hero-trust { justify-content: center; }
+  .solar-system-hero { max-width: 360px; margin-top: 40px; }
+  .features-grid { grid-template-columns: repeat(2, 1fr); }
+  .integrations-grid { grid-template-columns: repeat(3, 1fr); }
+  .mockup-content { grid-template-columns: 1fr; height: auto; }
+  .mockup-solar { height: 300px; }
+  .mockup-chat { border-left: none; border-top: 1px solid rgba(255,255,255,0.05); }
+}
+
+@media (max-width: 768px) {
+  .nav-links { display: none; }
+  .hamburger { display: flex; }
+  .features-grid { grid-template-columns: 1fr; }
+  .steps-grid { grid-template-columns: 1fr; gap: 40px; }
+  .steps-grid::before { display: none; }
+  .download-grid { grid-template-columns: 1fr; max-width: 320px; }
+  .integrations-grid { grid-template-columns: repeat(2, 1fr); }
+  .footer .container {
+    grid-template-columns: 1fr;
+    text-align: center;
+    gap: 24px;
+  }
+  .footer-brand { justify-content: center; }
+  .footer-links { justify-content: center; flex-wrap: wrap; }
+  .footer-copy { text-align: center; }
+  .hero { padding: 100px 0 60px; }
+  .orbit-3, .m-orbit-3, .planet-3, .mp-travel, .mp-projects { display: none; }
+  .solar-system-hero { max-width: 300px; }
+}
+
+@media (max-width: 480px) {
+  .hero h1 { font-size: 2.2rem; }
+  .hero-badge { font-size: 0.72rem; }
+  .integrations-grid { grid-template-columns: repeat(2, 1fr); }
+}
+</style>
+</head>
+<body>
+
+<!-- ═══════════════════════════════════════
+     NAVBAR
+     ═══════════════════════════════════════ -->
+<nav class="navbar" id="navbar">
+  <div class="container">
+    <a href="#" class="nav-logo">
+      <div class="nav-logo-icon"></div>
+      Solar AI OS
+    </a>
+    <ul class="nav-links">
+      <li><a href="#features">Features</a></li>
+      <li><a href="#integrations">Integrations</a></li>
+      <li><a href="#how-it-works">How It Works</a></li>
+      <li><a href="#waitlist" class="nav-cta">
+        <svg width="16" height="16" viewBox="0 0 16 16" fill="none"><path d="M8 1v10m0 0l3.5-3.5M8 11L4.5 7.5M2 14h12" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
+        Join Beta
+      </a></li>
+    </ul>
+    <button class="hamburger" id="hamburger" aria-label="Menu">
+      <span></span><span></span><span></span>
+    </button>
+  </div>
+</nav>
+
+<!-- Mobile Nav -->
+<div class="mobile-nav" id="mobileNav">
+  <a href="#features" onclick="closeMobile()">Features</a>
+  <a href="#integrations" onclick="closeMobile()">Integrations</a>
+  <a href="#how-it-works" onclick="closeMobile()">How It Works</a>
+  <a href="#download" onclick="closeMobile()" style="color: var(--gold);">Download</a>
+</div>
+
+<!-- ═══════════════════════════════════════
+     HERO
+     ═══════════════════════════════════════ -->
+<section class="hero" id="hero">
+  <div class="container">
+    <div class="hero-content">
+      <div class="hero-badge fade-in">
+        <span class="hero-badge-dot"></span>
+        Limited beta — join the waitlist
+      </div>
+      <h1 class="fade-in fade-in-delay-1">The AI that <span class="gold">orbits around you.</span></h1>
+      <p class="hero-sub fade-in fade-in-delay-2">Solar AI OS is a local-first personal AI desktop app. Your planets are your projects. Your Sun is your AI. Everything revolves around you.</p>
+      <div class="hero-buttons fade-in fade-in-delay-3">
+        <a href="#waitlist" class="btn-primary">
+          <span class="btn-icon">
+            <svg width="18" height="18" viewBox="0 0 18 18" fill="none"><path d="M9 1v10m0 0l3.5-3.5M9 11L5.5 7.5M2 15.5h14" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
+          </span>
+          Join the Waitlist
+        </a>
+        <a href="#download" class="btn-secondary">
+          <span class="btn-icon">
+            <svg width="18" height="18" viewBox="0 0 18 18" fill="none"><path d="M9 1.5v11.25m0 0l4-4m-4 4l-4-4M3 15h12" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
+          </span>
+          Download v0.1 (Windows)
+        </a>
+      </div>
+      <div class="hero-trust fade-in fade-in-delay-4">
+        <span>No subscriptions</span>
+        <span class="hero-trust-sep"></span>
+        <span>Your data stays on your machine</span>
+        <span class="hero-trust-sep"></span>
+        <span>Bring your own API key</span>
+      </div>
+    </div>
+
+    <div class="solar-system-hero fade-in fade-in-delay-2">
+      <div class="solar-container">
+        <div class="sun-hero"></div>
+        <div class="orbit orbit-1"></div>
+        <div class="orbit orbit-2"></div>
+        <div class="orbit orbit-3"></div>
+        <div class="planet planet-1">
+          <span class="planet-label">Work</span>
+        </div>
+        <div class="planet planet-2">
+          <span class="planet-label">Health</span>
+        </div>
+        <div class="planet planet-3">
+          <span class="planet-label">Finance</span>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ═══════════════════════════════════════
+     FEATURES
+     ═══════════════════════════════════════ -->
+<section id="features">
+  <div class="container">
+    <div class="section-header fade-in">
+      <div class="section-tag">Features</div>
+      <h2 class="section-title">What Solar AI Does</h2>
+      <p class="section-sub">A personal AI that lives on your machine, organized around the way you actually think and work.</p>
+    </div>
+    <div class="features-grid">
+      <div class="feature-card fade-in">
+        <div class="feature-icon">
+          <svg width="24" height="24" viewBox="0 0 24 24" fill="none">
+            <circle cx="12" cy="12" r="5" stroke="#f5a623" stroke-width="1.5"/>
+            <path d="M12 1v3m0 16v3m11-11h-3M4 12H1m18.07-7.07l-2.12 2.12M7.05 16.95l-2.12 2.12m14.14 0l-2.12-2.12M7.05 7.05L4.93 4.93" stroke="#f5a623" stroke-width="1.5" stroke-linecap="round"/>
+          </svg>
+        </div>
+        <h3>Your AI, Always On</h3>
+        <p>Runs locally 24/7. No internet required for core features. Your AI is always available, ready when you are.</p>
+      </div>
+      <div class="feature-card fade-in fade-in-delay-1">
+        <div class="feature-icon">
+          <svg width="24" height="24" viewBox="0 0 24 24" fill="none">
+            <circle cx="12" cy="12" r="3" fill="#f5a623" opacity="0.3"/>
+            <circle cx="12" cy="12" r="3" stroke="#f5a623" stroke-width="1.5"/>
+            <circle cx="12" cy="12" r="7" stroke="#f5a623" stroke-width="1" stroke-dasharray="2 3"/>
+            <circle cx="12" cy="12" r="10.5" stroke="#f5a623" stroke-width="1" stroke-dasharray="2 3" opacity="0.5"/>
+          </svg>
+        </div>
+        <h3>Planet-Based Workspaces</h3>
+        <p>Organize your life into planets. Each planet keeps its own memory, context, and history. Work stays separate from Health.</p>
+      </div>
+      <div class="feature-card fade-in fade-in-delay-2">
+        <div class="feature-icon">
+          <svg width="24" height="24" viewBox="0 0 24 24" fill="none">
+            <rect x="3" y="5" width="18" height="14" rx="2" stroke="#f5a623" stroke-width="1.5"/>
+            <path d="M3 9l9 5 9-5" stroke="#f5a623" stroke-width="1.5" stroke-linejoin="round"/>
+          </svg>
+        </div>
+        <h3>Gmail Integration</h3>
+        <p>Read, search, and summarize emails. Ask your AI to draft replies or find that invoice from last month.</p>
+      </div>
+      <div class="feature-card fade-in fade-in-delay-3">
+        <div class="feature-icon">
+          <svg width="24" height="24" viewBox="0 0 24 24" fill="none">
+            <rect x="3" y="4" width="18" height="17" rx="2" stroke="#f5a623" stroke-width="1.5"/>
+            <path d="M3 9h18M8 4V2m8 2V2m-8 9h.01M12 13h.01M16 13h.01M8 17h.01M12 17h.01" stroke="#f5a623" stroke-width="1.5" stroke-linecap="round"/>
+          </svg>
+        </div>
+        <h3>Calendar Awareness</h3>
+        <p>Connects to Google Calendar. Get daily briefings, schedule events, and never miss a meeting again.</p>
+      </div>
+      <div class="feature-card fade-in fade-in-delay-4">
+        <div class="feature-icon">
+          <svg width="24" height="24" viewBox="0 0 24 24" fill="none">
+            <circle cx="10" cy="10" r="7" stroke="#f5a623" stroke-width="1.5"/>
+            <path d="M15.5 15.5L21 21" stroke="#f5a623" stroke-width="1.5" stroke-linecap="round"/>
+          </svg>
+        </div>
+        <h3>Web Search &amp; Fetch</h3>
+        <p>Your AI can search the web and read any URL to give you up-to-date answers grounded in real sources.</p>
+      </div>
+      <div class="feature-card fade-in fade-in-delay-5">
+        <div class="feature-icon">
+          <svg width="24" height="24" viewBox="0 0 24 24" fill="none">
+            <rect x="3" y="4" width="18" height="16" rx="2" stroke="#f5a623" stroke-width="1.5"/>
+            <path d="M7 15l3-3 2 2 4-4" stroke="#f5a623" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+            <path d="M7 9h1" stroke="#f5a623" stroke-width="1.5" stroke-linecap="round"/>
+          </svg>
+        </div>
+        <h3>Shell Access</h3>
+        <p>Run terminal commands through your AI. Automate tasks, manage files, write and execute scripts.</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ═══════════════════════════════════════
+     APP MOCKUP
+     ═══════════════════════════════════════ -->
+<section id="mockup">
+  <div class="container">
+    <div class="section-header fade-in">
+      <div class="section-tag">Interface</div>
+      <h2 class="section-title">Your Universe, One Screen</h2>
+      <p class="section-sub">Click any planet to open its context. Your AI remembers everything about each domain.</p>
+    </div>
+    <div class="mockup-frame fade-in fade-in-delay-1">
+      <div class="mockup-titlebar">
+        <div class="mockup-dot"></div>
+        <div class="mockup-dot"></div>
+        <div class="mockup-dot"></div>
+        <span class="mockup-titlebar-text">Solar AI OS v0.1.0</span>
+      </div>
+      <div class="mockup-content">
+        <div class="mockup-solar">
+          <div class="mockup-sun">
+            <span class="mockup-sun-label">Solar AI</span>
+          </div>
+          <div class="m-orbit m-orbit-1"></div>
+          <div class="m-orbit m-orbit-2"></div>
+          <div class="m-orbit m-orbit-3"></div>
+          <div class="m-planet mp-work">
+            <div class="m-planet-inner"></div>
+            <span class="m-planet-tag">Work</span>
+          </div>
+          <div class="m-planet mp-health">
+            <div class="m-planet-inner"></div>
+            <span class="m-planet-tag">Health</span>
+          </div>
+          <div class="m-planet mp-finance">
+            <div class="m-planet-inner"></div>
+            <span class="m-planet-tag">Finance</span>
+          </div>
+          <div class="m-planet mp-travel">
+            <div class="m-planet-inner"></div>
+            <span class="m-planet-tag">Travel</span>
+          </div>
+          <div class="m-planet mp-projects">
+            <div class="m-planet-inner"></div>
+            <span class="m-planet-tag">Projects</span>
+          </div>
+        </div>
+        <div class="mockup-chat">
+          <div class="chat-header">
+            <div class="chat-header-dot"></div>
+            <div>
+              <div class="chat-header-title">Work</div>
+              <div class="chat-header-sub">Planet context active</div>
+            </div>
+          </div>
+          <div class="chat-messages">
+            <div class="chat-msg chat-msg-user">Summarize my unread emails from today.</div>
+            <div class="chat-msg chat-msg-ai">You have 4 unread emails. Two from your team about the Q3 roadmap, one meeting invite for Thursday, and a receipt from AWS. Want me to draft a reply to the roadmap thread?</div>
+            <div class="chat-msg chat-msg-user">Yes, say I'll review the doc by EOD.</div>
+            <div class="chat-msg chat-msg-ai">Done — draft ready. I referenced the timeline you mentioned last week. Want to preview before sending?</div>
+          </div>
+          <div class="chat-input">
+            <div class="chat-input-box">Ask Solar AI anything...</div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ═══════════════════════════════════════
+     INTEGRATIONS
+     ═══════════════════════════════════════ -->
+<section id="integrations">
+  <div class="container">
+    <div class="section-header fade-in">
+      <div class="section-tag">Integrations</div>
+      <h2 class="section-title">Works With Your Existing Life</h2>
+      <p class="section-sub">Connect the tools you already use. No new accounts, no migrations.</p>
+    </div>
+    <div class="integrations-grid">
+      <div class="integration-card fade-in">
+        <div class="integration-icon">
+          <svg viewBox="0 0 32 32" fill="none">
+            <rect x="4" y="8" width="24" height="16" rx="2" stroke="#ef5350" stroke-width="1.5"/>
+            <path d="M4 10l12 8 12-8" stroke="#ef5350" stroke-width="1.5" stroke-linejoin="round"/>
+          </svg>
+        </div>
+        <h4>Gmail</h4>
+      </div>
+      <div class="integration-card fade-in fade-in-delay-1">
+        <div class="integration-icon">
+          <svg viewBox="0 0 32 32" fill="none">
+            <rect x="5" y="6" width="22" height="20" rx="3" stroke="#42a5f5" stroke-width="1.5"/>
+            <path d="M5 12h22M11 6V4m10 2V4" stroke="#42a5f5" stroke-width="1.5" stroke-linecap="round"/>
+            <rect x="9" y="16" width="4" height="3" rx="0.5" fill="#42a5f5" opacity="0.4"/>
+            <rect x="15" y="16" width="4" height="3" rx="0.5" fill="#42a5f5" opacity="0.4"/>
+          </svg>
+        </div>
+        <h4>Google Calendar</h4>
+      </div>
+      <div class="integration-card fade-in fade-in-delay-2">
+        <div class="integration-icon">
+          <svg viewBox="0 0 32 32" fill="none">
+            <circle cx="14" cy="14" r="8" stroke="#a5d6a7" stroke-width="1.5"/>
+            <path d="M20 20l7 7" stroke="#a5d6a7" stroke-width="2" stroke-linecap="round"/>
+          </svg>
+        </div>
+        <h4>Web Search</h4>
+      </div>
+      <div class="integration-card fade-in fade-in-delay-3">
+        <div class="integration-icon">
+          <svg viewBox="0 0 32 32" fill="none">
+            <path d="M4 8a2 2 0 012-2h8l3 3h9a2 2 0 012 2v13a2 2 0 01-2 2H6a2 2 0 01-2-2V8z" stroke="#ffe082" stroke-width="1.5"/>
+          </svg>
+        </div>
+        <h4>File System</h4>
+      </div>
+      <div class="integration-card fade-in fade-in-delay-4">
+        <div class="integration-icon">
+          <svg viewBox="0 0 32 32" fill="none">
+            <rect x="4" y="6" width="24" height="20" rx="3" stroke="#b39ddb" stroke-width="1.5"/>
+            <path d="M9 14l3 3 5-6" stroke="#b39ddb" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+            <path d="M9 20h8" stroke="#b39ddb" stroke-width="1.5" stroke-linecap="round" opacity="0.5"/>
+          </svg>
+        </div>
+        <h4>Terminal</h4>
+      </div>
+      <div class="integration-card dimmed fade-in fade-in-delay-5">
+        <div class="integration-icon">
+          <svg viewBox="0 0 32 32" fill="none">
+            <circle cx="16" cy="16" r="10" stroke="#555a7e" stroke-width="1.5" stroke-dasharray="3 3"/>
+            <path d="M16 11v10m-5-5h10" stroke="#555a7e" stroke-width="1.5" stroke-linecap="round"/>
+          </svg>
+        </div>
+        <h4>More Coming</h4>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ═══════════════════════════════════════
+     HOW IT WORKS
+     ═══════════════════════════════════════ -->
+<section id="how-it-works">
+  <div class="container">
+    <div class="section-header fade-in">
+      <div class="section-tag">Setup</div>
+      <h2 class="section-title">Up and Running in 3 Minutes</h2>
+      <p class="section-sub">No Docker. No Python environment. No cloud account. Just download and go.</p>
+    </div>
+    <div class="steps-grid">
+      <div class="step-card fade-in">
+        <div class="step-number">1</div>
+        <h3>Download &amp; Install</h3>
+        <p>Grab the installer for your OS. Double-click. Done. No dependencies required.</p>
+      </div>
+      <div class="step-card fade-in fade-in-delay-2">
+        <div class="step-number">2</div>
+        <h3>Add Your API Key</h3>
+        <p>Paste your Anthropic API key in the setup screen. One time, stored securely in your OS keychain.</p>
+      </div>
+      <div class="step-card fade-in fade-in-delay-4">
+        <div class="step-number">3</div>
+        <h3>Meet Your Solar System</h3>
+        <p>Your AI is live. Click any planet to start chatting in context. Ask it anything.</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ═══════════════════════════════════════
+     WAITLIST
+     ═══════════════════════════════════════ -->
+<section id="waitlist">
+  <div class="container">
+    <div class="waitlist-inner fade-in">
+      <div class="waitlist-spots">
+        <div class="waitlist-spots-dot"></div>
+        Limited beta — accepting early members
+      </div>
+      <h2>Be among the first to <span class="gold">orbit.</span></h2>
+      <p>Solar AI OS is opening to a limited number of beta members. Join the waitlist and get early access before we open to the public.</p>
+
+      <!-- ── Beehiiv / newsletter embed goes here ─────────────────────
+           Once you have your Beehiiv publication ID, replace the form
+           below with your embed snippet from:
+           Beehiiv Dashboard → Grow → Forms → Embed
+      ─────────────────────────────────────────────────────────────── -->
+      <form class="waitlist-form" id="waitlistForm" onsubmit="submitWaitlist(event)">
+        <input
+          type="email"
+          class="waitlist-input"
+          id="waitlistEmail"
+          placeholder="your@email.com"
+          required
+          autocomplete="email"
+        />
+        <button type="submit" class="waitlist-btn" id="waitlistBtn">
+          Get Early Access
+        </button>
+      </form>
+      <div class="waitlist-success" id="waitlistSuccess">
+        ✓ You're on the list. We'll reach out when your spot is ready.
+      </div>
+      <p class="waitlist-note">No spam. Just early access when we're ready.</p>
+
+      <div class="waitlist-social">
+        <a href="https://x.com" target="_blank" rel="noopener">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="M18.244 2.25h3.308l-7.227 8.26 8.502 11.24H16.17l-4.714-6.231-5.401 6.231H2.744l7.737-8.835L1.254 2.25H8.08l4.253 5.622zm-1.161 17.52h1.833L7.084 4.126H5.117z"/></svg>
+          Follow on X
+        </a>
+        <a href="https://instagram.com" target="_blank" rel="noopener">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="M12 2.163c3.204 0 3.584.012 4.85.07 3.252.148 4.771 1.691 4.919 4.919.058 1.265.069 1.645.069 4.849 0 3.205-.012 3.584-.069 4.849-.149 3.225-1.664 4.771-4.919 4.919-1.266.058-1.644.07-4.85.07-3.204 0-3.584-.012-4.849-.07-3.26-.149-4.771-1.699-4.919-4.92-.058-1.265-.07-1.644-.07-4.849 0-3.204.013-3.583.07-4.849.149-3.227 1.664-4.771 4.919-4.919 1.266-.057 1.645-.069 4.849-.069zM12 0C8.741 0 8.333.014 7.053.072 2.695.272.273 2.69.073 7.052.014 8.333 0 8.741 0 12c0 3.259.014 3.668.072 4.948.2 4.358 2.618 6.78 6.98 6.98C8.333 23.986 8.741 24 12 24c3.259 0 3.668-.014 4.948-.072 4.354-.2 6.782-2.618 6.979-6.98.059-1.28.073-1.689.073-4.948 0-3.259-.014-3.667-.072-4.947-.196-4.354-2.617-6.78-6.979-6.98C15.668.014 15.259 0 12 0zm0 5.838a6.162 6.162 0 100 12.324 6.162 6.162 0 000-12.324zM12 16a4 4 0 110-8 4 4 0 010 8zm6.406-11.845a1.44 1.44 0 100 2.881 1.44 1.44 0 000-2.881z"/></svg>
+          Instagram
+        </a>
+        <a href="https://github.com/theintelligentmind00-droid/Solar-Ai" target="_blank" rel="noopener">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path fill-rule="evenodd" d="M12 0C5.37 0 0 5.37 0 12c0 5.31 3.435 9.795 8.205 11.385.6.105.825-.255.825-.57 0-.285-.015-1.23-.015-2.235-3.015.555-3.795-.735-4.035-1.41-.135-.345-.72-1.41-1.23-1.695-.42-.225-1.02-.78-.015-.795.945-.015 1.62.87 1.845 1.23 1.08 1.815 2.805 1.305 3.495.99.105-.78.42-1.305.765-1.605-2.67-.3-5.46-1.335-5.46-5.925 0-1.305.465-2.385 1.23-3.225-.12-.3-.54-1.53.12-3.18 0 0 1.005-.315 3.3 1.23.96-.27 1.98-.405 3-.405s2.04.135 3 .405c2.295-1.56 3.3-1.23 3.3-1.23.66 1.65.24 2.88.12 3.18.765.84 1.23 1.905 1.23 3.225 0 4.605-2.805 5.625-5.475 5.925.435.375.81 1.095.81 2.22 0 1.605-.015 2.895-.015 3.3 0 .315.225.69.825.57A12.02 12.02 0 0024 12c0-6.63-5.37-12-12-12z" clip-rule="evenodd"/></svg>
+          GitHub
+        </a>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ═══════════════════════════════════════
+     DOWNLOAD
+     ═══════════════════════════════════════ -->
+<section id="download">
+  <div class="container">
+    <div class="section-header fade-in">
+      <div class="section-tag">Get Started</div>
+      <h2 class="section-title">Download Solar AI OS</h2>
+      <p class="section-sub">Free, open source, local-first. Available for all major platforms.</p>
+    </div>
+    <div class="download-grid">
+      <a href="https://github.com/theintelligentmind00-droid/Solar-Ai/releases/download/v0.1.0/Solar.AI.OS_0.1.0_x64-setup.exe" class="download-card fade-in" download>
+        <div class="download-icon">
+          <svg viewBox="0 0 24 24" fill="currentColor"><path d="M0 3.449L9.75 2.1v9.451H0m10.949-9.602L24 0v11.4H10.949M0 12.6h9.75v9.451L0 20.699M10.949 12.6H24V24l-12.9-1.801"/></svg>
+        </div>
+        <h4>Download for Windows</h4>
+        <div class="download-version">v0.1.0 · Free · .exe</div>
+      </a>
+      <a href="#" class="download-card fade-in fade-in-delay-1" style="opacity:0.55;cursor:not-allowed;" title="Coming soon">
+        <div class="download-icon">
+          <svg viewBox="0 0 24 24" fill="currentColor"><path d="M18.71 19.5c-.83 1.24-1.71 2.45-3.05 2.47-1.34.03-1.77-.79-3.29-.79-1.53 0-2 .77-3.27.82-1.31.05-2.3-1.32-3.14-2.53C4.25 17 2.94 12.45 4.7 9.39c.87-1.52 2.43-2.48 4.12-2.51 1.28-.02 2.5.87 3.29.87.78 0 2.26-1.07 3.8-.91.65.03 2.47.26 3.64 1.98-.09.06-2.17 1.28-2.15 3.81.03 3.02 2.65 4.03 2.68 4.04-.03.07-.42 1.44-1.38 2.83M13 3.5c.73-.83 1.94-1.46 2.94-1.5.13 1.17-.34 2.35-1.04 3.19-.69.85-1.83 1.51-2.95 1.42-.15-1.15.41-2.35 1.05-3.11z"/></svg>
+        </div>
+        <h4>Download for macOS</h4>
+        <div class="download-version">Coming Soon</div>
+      </a>
+      <a href="#" class="download-card fade-in fade-in-delay-2" style="opacity:0.55;cursor:not-allowed;" title="Coming soon">
+        <div class="download-icon">
+          <svg viewBox="0 0 24 24" fill="currentColor"><path d="M12.504 0c-.155 0-.315.008-.48.021-4.226.333-3.105 4.807-3.17 6.298-.076 1.092-.3 1.953-1.05 3.02-.885 1.051-2.127 2.75-2.716 4.521-.278.832-.41 1.684-.287 2.489a.424.424 0 00-.11.135c-.26.268-.45.6-.663.839-.073.076-.263.22-.42.164-.006-.002-.008-.006-.014-.007-.003-.001-.006 0-.009-.002l-.015-.005c-.043-.024-.09-.046-.205-.138a5.57 5.57 0 01-.36-.353 9.03 9.03 0 01-.352-.396c-.396-.482-.755-1.025-1.068-1.594-.222-.405-.404-.842-.527-1.322a4.4 4.4 0 01-.088-.37l-.021-.105c-.006-.037-.013-.072-.017-.109-.003-.03-.008-.06-.012-.089-.04-.305-.046-.624.002-.96.167-1.169.733-2.3 1.453-3.34a14.766 14.766 0 00.337-.485c.178-.278.333-.546.467-.806.066-.127.136-.292.183-.397.154-.286.473-.865.473-.865-.09.14-.193.344-.366.588-.2.289-.442.623-.73.948-.163.186-.342.382-.532.573a7.804 7.804 0 01-1.137.997 6.946 6.946 0 01-.442.312c.082-.123.166-.246.254-.365A12.883 12.883 0 003.61 8.23c.207-.31.423-.626.647-.943.224-.316.22-.476.214-.636-.009-.236-.104-.482-.208-.67-.187-.335-.516-.476-.868-.454-.088.006-.178.018-.271.038a3.613 3.613 0 00-.7.233c-.104.053-.212.114-.318.18A6.155 6.155 0 001.2 7.2c-.204.217-.387.437-.548.65-.348.462-.581.925-.737 1.34-.164.44-.257.84-.306 1.124a5.69 5.69 0 00-.063.82c.012.456.06.895.16 1.304.154.644.418 1.205.724 1.694.144.232.294.456.463.661.077.09.16.179.237.271.02.02.036.04.052.06.22.254.419.525.604.81.195.302.367.63.513.992.192.475.314.996.35 1.56.03.45-.004.907-.103 1.37-.055.258-.132.505-.216.754a8.51 8.51 0 01-.56 1.298c-.234.44-.486.837-.733 1.163a5.29 5.29 0 01-.564.635c-.199.187-.384.327-.54.41l-.148.075c.18-.06.34-.17.5-.3.192-.16.384-.4.564-.653.18-.253.348-.536.51-.846.217-.42.408-.88.558-1.344.112-.347.208-.712.275-1.093.07-.398.105-.81.093-1.234-.014-.527-.1-1.083-.281-1.63a5.94 5.94 0 00-.485-.993c-.188-.313-.398-.6-.628-.867l-.056-.064c-.081-.094-.168-.184-.25-.279a5.94 5.94 0 01-.478-.69c-.324-.522-.575-1.113-.718-1.79-.091-.43-.132-.893-.14-1.377-.004-.238.012-.485.044-.748.044-.268.128-.647.28-1.066.14-.385.355-.815.673-1.234A5.52 5.52 0 012 6.528c.225-.217.474-.415.74-.58.09-.055.183-.108.279-.157a3.32 3.32 0 01.585-.2c.07-.016.14-.025.207-.03.216-.013.408.062.564.263.085.109.16.266.204.476.024.115.01.251-.004.383-.01.093-.025.174-.04.256l-.007.04a6.86 6.86 0 00-.08.588 4.02 4.02 0 00.014.599c.01.07.022.134.037.195-.084.106-.178.278-.278.478-.053.105-.148.339-.194.438-.131.257-.283.52-.457.793a11.8 11.8 0 01-.638.92 12.264 12.264 0 00-1.27 2.272c-.625 1.477-.694 2.93-.177 4.06.252.553.615.995 1.01 1.37.255.24.506.44.74.608.062.045.117.083.18.131.025.017.1.073.163.098.13.05.297-.009.407-.126.024-.025.044-.054.068-.078.214-.24.397-.566.636-.813.09-.094.18-.185.276-.267-.035.105-.074.216-.12.326a5.03 5.03 0 01-.207.472 8.792 8.792 0 01-1.138 1.693c-.36.42-.76.784-1.187 1.06-.414.264-.86.432-1.306.456-.403.02-.772-.103-1.078-.3a2.55 2.55 0 01-.27-.208 5.72 5.72 0 01-.29-.285c.08.095.166.188.25.274.109.109.22.208.336.296.335.254.72.417 1.146.4.479-.02.96-.196 1.407-.47.455-.28.883-.66 1.26-1.1.54-.627.998-1.394 1.288-2.12.096-.242.177-.488.236-.728.03-.12.058-.244.077-.362.02-.12.037-.232.05-.358.065-.62.04-1.193-.057-1.7a4.57 4.57 0 00-.505-1.267c-.057-.097-.12-.191-.184-.283-.04-.06-.085-.116-.127-.174a5.71 5.71 0 01-.224-.327 3.03 3.03 0 01-.142-.246 6.97 6.97 0 01.34-.73c.162-.3.337-.593.504-.844.037-.06.073-.118.111-.172.043-.064.085-.126.125-.189.22-.347.396-.64.536-.863l-.002.005c.172-.292.286-.527.375-.72a3.82 3.82 0 00.21-.592c.042-.166.078-.41.06-.703C10.57.77 10.393.39 10.12.19c-.165-.12-.356-.19-.562-.19h-.004z M12 5.6v12.8l6-6.4z"/></svg>
+        </div>
+        <h4>Download for Linux</h4>
+        <div class="download-version">Coming Soon</div>
+      </a>
+    </div>
+    <p class="download-note fade-in">&#9889; Requires an Anthropic API key · ~38MB download · <a href="https://github.com/theintelligentmind00-droid/Solar-Ai/releases/download/v0.1.0/Solar.AI.OS_0.1.0_x64_en-US.msi" style="color:var(--gold);text-decoration:underline;">Also available as .msi</a></p>
+  </div>
+</section>
+
+<!-- ═══════════════════════════════════════
+     FOOTER
+     ═══════════════════════════════════════ -->
+<footer class="footer">
+  <div class="container">
+    <div class="footer-brand">
+      <div class="footer-sun"></div>
+      <div class="footer-brand-text">
+        <h5>Solar AI OS</h5>
+        <p>The AI that orbits around you.</p>
+      </div>
+    </div>
+    <div class="footer-links">
+      <a href="https://github.com/theintelligentmind00-droid/Solar-Ai" target="_blank" rel="noopener">GitHub</a>
+      <a href="#">Privacy Policy</a>
+      <a href="#">Discord</a>
+      <a href="#">Changelog</a>
+    </div>
+    <div class="footer-copy">
+      &copy; 2026 Solar AI OS.<br>Open source under the MIT License.
+    </div>
+  </div>
+</footer>
+
+<!-- Rocket Overlay -->
+<div class="rocket-overlay" id="rocketOverlay">
+  <div class="rocket" id="rocket">
+    <div class="rocket-body">
+      <div class="rocket-nose"></div>
+      <div class="rocket-fuselage">
+        <div class="rocket-window"></div>
+      </div>
+      <div class="rocket-fins">
+        <div class="rocket-fin-l"></div>
+        <div class="rocket-fin-center"></div>
+        <div class="rocket-fin-r"></div>
+      </div>
+      <div class="rocket-flame">
+        <div class="flame-core"></div>
+        <div class="flame-outer"></div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+/* ═══════════════════════════════════════
+   INTERSECTION OBSERVER — Fade In
+   ═══════════════════════════════════════ */
+const observer = new IntersectionObserver((entries) => {
+  entries.forEach(entry => {
+    if (entry.isIntersecting) {
+      entry.target.classList.add('visible');
+    }
+  });
+}, { threshold: 0.1, rootMargin: '0px 0px -40px 0px' });
+
+document.querySelectorAll('.fade-in').forEach(el => observer.observe(el));
+
+/* ═══════════════════════════════════════
+   NAVBAR SCROLL
+   ═══════════════════════════════════════ */
+const navbar = document.getElementById('navbar');
+window.addEventListener('scroll', () => {
+  navbar.classList.toggle('scrolled', window.scrollY > 40);
+}, { passive: true });
+
+/* ═══════════════════════════════════════
+   HAMBURGER MENU
+   ═══════════════════════════════════════ */
+const hamburger = document.getElementById('hamburger');
+const mobileNav = document.getElementById('mobileNav');
+
+hamburger.addEventListener('click', () => {
+  hamburger.classList.toggle('active');
+  mobileNav.classList.toggle('open');
+  document.body.style.overflow = mobileNav.classList.contains('open') ? 'hidden' : '';
+});
+
+function closeMobile() {
+  hamburger.classList.remove('active');
+  mobileNav.classList.remove('open');
+  document.body.style.overflow = '';
+}
+
+/* ═══════════════════════════════════════
+   ROCKET LAUNCH ON DOWNLOAD CLICK
+   ═══════════════════════════════════════ */
+let rocketActive = false;
+
+document.querySelectorAll('.download-trigger').forEach(btn => {
+  btn.addEventListener('click', (e) => {
+    e.preventDefault();
+
+    // If it's the hero button, scroll to download first
+    if (btn.closest('.hero-buttons')) {
+      document.getElementById('download').scrollIntoView({ behavior: 'smooth' });
+      return;
+    }
+
+    if (rocketActive) return;
+    rocketActive = true;
+
+    const rocket = document.getElementById('rocket');
+    const overlay = document.getElementById('rocketOverlay');
+
+    // Reset
+    rocket.classList.remove('rocket-launch');
+    rocket.style.bottom = '-200px';
+
+    // Show overlay
+    overlay.classList.add('active');
+
+    // Screen shake
+    document.body.classList.add('shake');
+    setTimeout(() => document.body.classList.remove('shake'), 600);
+
+    // Smoke particles
+    for (let i = 0; i < 12; i++) {
+      setTimeout(() => {
+        const puff = document.createElement('div');
+        puff.className = 'smoke-puff';
+        const size = 20 + Math.random() * 40;
+        puff.style.width = size + 'px';
+        puff.style.height = size + 'px';
+        puff.style.left = (50 + (Math.random() - 0.5) * 10) + '%';
+        puff.style.bottom = '0';
+        overlay.appendChild(puff);
+        setTimeout(() => puff.remove(), 1500);
+      }, i * 80);
+    }
+
+    // Launch!
+    requestAnimationFrame(() => {
+      rocket.classList.add('rocket-launch');
+    });
+
+    setTimeout(() => {
+      rocket.classList.remove('rocket-launch');
+      rocket.style.bottom = '-200px';
+      overlay.classList.remove('active');
+      rocketActive = false;
+    }, 2500);
+  });
+});
+
+/* ═══════════════════════════════════════
+   WAITLIST FORM SUBMISSION
+   ═══════════════════════════════════════ */
+function submitWaitlist(e) {
+  e.preventDefault();
+  const email = document.getElementById('waitlistEmail').value.trim();
+  if (!email) return;
+  const url = 'https://solarai-waitlist-newsletter.beehiiv.com/subscribe?email=' + encodeURIComponent(email);
+  window.open(url, '_blank');
+  document.getElementById('waitlistForm').style.display = 'none';
+  document.getElementById('waitlistSuccess').style.display = 'block';
+}
+
+/* ═══════════════════════════════════════
+   SMOOTH SCROLL FOR NAV LINKS
+   ═══════════════════════════════════════ */
+document.querySelectorAll('a[href^="#"]').forEach(anchor => {
+  anchor.addEventListener('click', function(e) {
+    const href = this.getAttribute('href');
+    if (href === '#') return;
+    e.preventDefault();
+    const target = document.querySelector(href);
+    if (target) {
+      target.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    }
+  });
+});
+</script>
+</body>
+</html>
