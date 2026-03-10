@@ -1992,63 +1992,6 @@ function closeMobile() {
   document.body.style.overflow = '';
 }
 
-/* ═══════════════════════════════════════
-   ROCKET LAUNCH ON DOWNLOAD CLICK
-   ═══════════════════════════════════════ */
-let rocketActive = false;
-
-document.querySelectorAll('.download-trigger').forEach(btn => {
-  btn.addEventListener('click', (e) => {
-    e.preventDefault();
-    );
-      return;
-    }
-
-    if (rocketActive) return;
-    rocketActive = true;
-
-    const rocket = document.getElementById('rocket');
-    const overlay = document.getElementById('rocketOverlay');
-
-    // Reset
-    rocket.classList.remove('rocket-launch');
-    rocket.style.bottom = '-200px';
-
-    // Show overlay
-    overlay.classList.add('active');
-
-    // Screen shake
-    document.body.classList.add('shake');
-    setTimeout(() => document.body.classList.remove('shake'), 600);
-
-    // Smoke particles
-    for (let i = 0; i < 12; i++) {
-      setTimeout(() => {
-        const puff = document.createElement('div');
-        puff.className = 'smoke-puff';
-        const size = 20 + Math.random() * 40;
-        puff.style.width = size + 'px';
-        puff.style.height = size + 'px';
-        puff.style.left = (50 + (Math.random() - 0.5) * 10) + '%';
-        puff.style.bottom = '0';
-        overlay.appendChild(puff);
-        setTimeout(() => puff.remove(), 1500);
-      }, i * 80);
-    }
-
-    // Launch!
-    requestAnimationFrame(() => {
-      rocket.classList.add('rocket-launch');
-    });
-
-    setTimeout(() => {
-      rocket.classList.remove('rocket-launch');
-      rocket.style.bottom = '-200px';
-      overlay.classList.remove('active');
-      rocketActive = false;
-    }, 2500);
-  });
-});
 
 /* ═══════════════════════════════════════
    WAITLIST FORM SUBMISSION
