@@ -1,7 +1,31 @@
 import { openUrl } from "@tauri-apps/plugin-opener";
 import { Shield, X } from "lucide-react";
-import { useCallback, useEffect, useState } from "react";
-import { api, type Integration, type LogEntry, type Memory } from "../api/agent";
+import { useCallback, useEffect, useMemo, useState } from "react";
+import { api, type Integration, type LogEntry, type Memory, type Planet } from "../api/agent";
+
+// ── Helpers ──────────────────────────────────────────────────
+function relativeTime(isoStr: string): string {
+  const diff = Date.now() - new Date(isoStr).getTime();
+  const s = Math.floor(diff / 1000);
+  if (s < 60)  return "just now";
+  const m = Math.floor(s / 60);
+  if (m < 60)  return `${m}m ago`;
+  const h = Math.floor(m / 60);
+  if (h < 24)  return `${h}h ago`;
+  const d = Math.floor(h / 24);
+  return `${d}d ago`;
+}
+
+const SKILL_BADGE_COLORS: Record<string, { bg: string; color: string }> = {
+  gmail:       { bg: "rgba(245,158,11,0.15)",  color: "#fbbf24" },
+  shell:       { bg: "rgba(239,68,68,0.14)",   color: "#fca5a5" },
+  calendar:    { bg: "rgba(59,130,246,0.14)",  color: "#93c5fd" },
+  web_search:  { bg: "rgba(34,197,94,0.14)",   color: "#86efac" },
+  file_reader: { bg: "rgba(167,139,250,0.18)", color: "#c4b5fd" },
+};
+function getSkillBadge(skill: string): { bg: string; color: string } {
+  return SKILL_BADGE_COLORS[skill.toLowerCase()] ?? { bg: "rgba(255,255,255,0.08)", color: "rgba(255,255,255,0.5)" };
+}
 
 async function openOAuthUrl(url: string) {
   try {
@@ -506,10 +530,27 @@ export function SettingsPanel({ onClose }: Props) {
   // Memories state
   const [memories, setMemories] = useState<Memory[]>([]);
   const [memoriesLoading, setMemoriesLoading] = useState(false);
+  const [planets, setPlanets] = useState<Planet[]>([]);
 
   // Logs state
   const [logs, setLogs] = useState<LogEntry[]>([]);
   const [logsLoading, setLogsLoading] = useState(false);
+
+  const loadMemories = useCallback(() => {
+    setMemoriesLoading(true);
+    Promise.all([api.getMemories(), api.getPlanets()])
+      .then(([mems, pls]) => { setMemories(mems); setPlanets(pls); })
+      .catch(() => {})
+      .finally(() => setMemoriesLoading(false));
+  }, []);
+
+  const loadLogs = useCallback(() => {
+    setLogsLoading(true);
+    api.getLogs()
+      .then(setLogs)
+      .catch(() => setLogs([]))
+      .finally(() => setLogsLoading(false));
+  }, []);
 
   useEffect(() => {
     if (tab === "permissions") {
@@ -520,21 +561,18 @@ export function SettingsPanel({ onClose }: Props) {
         .catch(() => setIntegrations([]))
         .finally(() => setIntegrationsLoading(false));
     } else if (tab === "memories") {
-      setMemoriesLoading(true);
-      api
-        .getMemories()
-        .then(setMemories)
-        .catch(() => setMemories([]))
-        .finally(() => setMemoriesLoading(false));
+      loadMemories();
     } else if (tab === "logs") {
-      setLogsLoading(true);
-      api
-        .getLogs()
-        .then(setLogs)
-        .catch(() => setLogs([]))
-        .finally(() => setLogsLoading(false));
+      loadLogs();
     }
-  }, [tab]);
+  }, [tab, loadMemories, loadLogs]);
+
+  // Auto-refresh logs every 30s when on that tab
+  useEffect(() => {
+    if (tab !== "logs") return;
+    const id = setInterval(loadLogs, 30_000);
+    return () => clearInterval(id);
+  }, [tab, loadLogs]);
 
   function handleToggle(integration: Integration) {
     api
@@ -558,6 +596,29 @@ export function SettingsPanel({ onClose }: Props) {
       })
       .catch(() => undefined);
   }
+
+  // Build planet id → name map for memory grouping
+  const planetMap = useMemo(() => {
+    const m = new Map<string, string>();
+    planets.forEach((p) => m.set(p.id, p.name));
+    return m;
+  }, [planets]);
+
+  // Group memories by planet_id
+  const memoriesByGroup = useMemo(() => {
+    const groups = new Map<string | null, Memory[]>();
+    memories.forEach((mem) => {
+      const key = mem.planet_id ?? null;
+      if (!groups.has(key)) groups.set(key, []);
+      groups.get(key)!.push(mem);
+    });
+    // Sort: null (Global) last
+    return [...groups.entries()].sort(([a], [b]) => {
+      if (a === null) return 1;
+      if (b === null) return -1;
+      return (planetMap.get(a) ?? a).localeCompare(planetMap.get(b) ?? b);
+    });
+  }, [memories, planetMap]);
 
   const TAB_LABELS: Record<Tab, string> = {
     permissions: "Permissions",
@@ -778,108 +839,172 @@ export function SettingsPanel({ onClose }: Props) {
 
         {/* Memories tab */}
         {tab === "memories" && (
-          <div style={{ padding: "16px 20px", maxHeight: "340px", overflowY: "auto", display: "flex", flexDirection: "column", gap: "8px" }}>
-            {memoriesLoading ? (
-              <div style={{ textAlign: "center", color: "var(--text-dim)", fontSize: "12px", padding: "24px 0", fontFamily: "monospace", letterSpacing: "0.08em" }}>LOADING…</div>
-            ) : memories.length === 0 ? (
-              <div style={{ textAlign: "center", color: "var(--text-muted)", fontSize: "12px", padding: "24px 0", lineHeight: "1.6" }}>
-                No memories saved yet.<br />
-                <span style={{ color: "var(--text-dim)", fontFamily: "monospace", fontSize: "11px" }}>Say "remember: …" in chat to save something.</span>
-              </div>
-            ) : (
-              <>
-                <p style={{ color: "var(--text-dim)", fontSize: "11px", margin: "0 0 4px 0", fontFamily: "monospace", letterSpacing: "0.06em" }}>
-                  {memories.length} {memories.length === 1 ? "MEMORY" : "MEMORIES"} STORED
-                </p>
-                {memories.map((memory) => (
-                  <div
-                    key={memory.id}
-                    style={{
-                      display: "flex",
-                      alignItems: "flex-start",
-                      justifyContent: "space-between",
-                      gap: "10px",
-                      padding: "10px 13px",
-                      borderRadius: "9px",
-                      background: "rgba(255,255,255,0.025)",
-                      border: "1px solid rgba(167,139,250,0.09)",
-                    }}
-                  >
-                    <div style={{ flex: 1, minWidth: 0 }}>
-                      <p style={{ color: "var(--sun-color)", fontSize: "10px", fontWeight: 600, margin: 0, textTransform: "uppercase", letterSpacing: "0.08em", fontFamily: "monospace" }}>{memory.key}</p>
-                      <p style={{ color: "rgba(255,255,255,0.7)", fontSize: "12px", margin: "4px 0 0 0", lineHeight: "1.5", wordBreak: "break-word" }}>
-                        {memory.value}
+          <div style={{ display: "flex", flexDirection: "column", overflow: "hidden", maxHeight: "380px" }}>
+            {/* Toolbar */}
+            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "10px 20px 8px", flexShrink: 0 }}>
+              <span style={{ color: "var(--text-dim)", fontSize: "11px", fontFamily: "monospace", letterSpacing: "0.06em" }}>
+                {memoriesLoading ? "LOADING…" : `${memories.length} ${memories.length === 1 ? "MEMORY" : "MEMORIES"}`}
+              </span>
+              <button
+                onClick={loadMemories}
+                disabled={memoriesLoading}
+                style={{
+                  fontSize: "11px", padding: "4px 10px", borderRadius: "7px", cursor: "pointer",
+                  background: "rgba(167,139,250,0.1)", border: "1px solid rgba(167,139,250,0.2)",
+                  color: "#c4b5fd", fontFamily: "inherit", opacity: memoriesLoading ? 0.5 : 1,
+                }}
+              >
+                Refresh
+              </button>
+            </div>
+            <div style={{ overflowY: "auto", flex: 1, padding: "0 20px 16px", display: "flex", flexDirection: "column", gap: "12px" }}>
+              {memoriesLoading ? (
+                <div style={{ textAlign: "center", color: "var(--text-dim)", fontSize: "12px", padding: "24px 0", fontFamily: "monospace", letterSpacing: "0.08em" }}>LOADING…</div>
+              ) : memories.length === 0 ? (
+                <div style={{ textAlign: "center", color: "var(--text-muted)", fontSize: "12px", padding: "24px 0", lineHeight: "1.6" }}>
+                  No memories saved yet.<br />
+                  <span style={{ color: "var(--text-dim)", fontFamily: "monospace", fontSize: "11px" }}>Say "remember: …" in chat to save something.</span>
+                </div>
+              ) : (
+                memoriesByGroup.map(([groupKey, groupMemories]) => {
+                  const groupLabel = groupKey === null
+                    ? "Global"
+                    : (planetMap.get(groupKey) ?? "Unknown Planet");
+                  return (
+                    <div key={groupKey ?? "__global__"}>
+                      <p style={{
+                        color: groupKey === null ? "rgba(167,139,250,0.65)" : "var(--sun-color)",
+                        fontSize: "10px", fontWeight: 600, margin: "0 0 6px 0",
+                        textTransform: "uppercase", letterSpacing: "0.1em", fontFamily: "monospace",
+                      }}>
+                        {groupKey === null ? "◎" : "◆"} {groupLabel}
                       </p>
+                      <div style={{ display: "flex", flexDirection: "column", gap: "6px" }}>
+                        {groupMemories.map((memory) => (
+                          <div
+                            key={memory.id}
+                            style={{
+                              display: "flex",
+                              alignItems: "flex-start",
+                              justifyContent: "space-between",
+                              gap: "10px",
+                              padding: "9px 12px",
+                              borderRadius: "9px",
+                              background: "rgba(255,255,255,0.022)",
+                              border: "1px solid rgba(167,139,250,0.09)",
+                            }}
+                          >
+                            <div style={{ flex: 1, minWidth: 0 }}>
+                              <span style={{ color: "rgba(255,255,255,0.9)", fontSize: "12px", fontWeight: 600 }}>{memory.key}</span>
+                              <span style={{ color: "var(--text-muted)", fontSize: "11px", margin: "0 0 0 6px" }}>→</span>
+                              <span style={{ color: "rgba(255,255,255,0.65)", fontSize: "12px", margin: "0 0 0 6px", wordBreak: "break-word" }}>{memory.value}</span>
+                            </div>
+                            <button
+                              onClick={() => handleDeleteMemory(memory.id)}
+                              aria-label={`Delete memory: ${memory.key}`}
+                              style={{
+                                flexShrink: 0, background: "none", border: "none",
+                                color: "var(--text-dim)", cursor: "pointer",
+                                fontSize: "16px", lineHeight: 1, padding: "0 2px", transition: "color 0.15s",
+                              }}
+                              onMouseEnter={(e) => { (e.currentTarget as HTMLButtonElement).style.color = "#fca5a5"; }}
+                              onMouseLeave={(e) => { (e.currentTarget as HTMLButtonElement).style.color = "var(--text-dim)"; }}
+                            >
+                              ×
+                            </button>
+                          </div>
+                        ))}
+                      </div>
                     </div>
-                    <button
-                      onClick={() => handleDeleteMemory(memory.id)}
-                      aria-label={`Delete memory: ${memory.key}`}
-                      style={{
-                        flexShrink: 0,
-                        background: "none",
-                        border: "none",
-                        color: "var(--text-dim)",
-                        cursor: "pointer",
-                        fontSize: "16px",
-                        lineHeight: 1,
-                        padding: "0 2px",
-                        transition: "color 0.15s",
-                      }}
-                      onMouseEnter={(e) => { (e.currentTarget as HTMLButtonElement).style.color = "#fca5a5"; }}
-                      onMouseLeave={(e) => { (e.currentTarget as HTMLButtonElement).style.color = "var(--text-dim)"; }}
-                    >
-                      ×
-                    </button>
-                  </div>
-                ))}
-              </>
-            )}
+                  );
+                })
+              )}
+            </div>
           </div>
         )}
 
         {/* Activity Log tab */}
         {tab === "logs" && (
-          <div style={{ padding: "16px 20px", maxHeight: "340px", overflowY: "auto", display: "flex", flexDirection: "column", gap: "6px" }}>
-            {logsLoading ? (
-              <div style={{ textAlign: "center", color: "var(--text-dim)", fontSize: "12px", padding: "24px 0", fontFamily: "monospace", letterSpacing: "0.08em" }}>LOADING…</div>
-            ) : logs.length === 0 ? (
-              <div style={{ textAlign: "center", color: "var(--text-muted)", fontSize: "12px", padding: "24px 0" }}>
-                No actions logged yet.
-              </div>
-            ) : (
-              logs.map((log) => (
-                <div
-                  key={log.id}
-                  style={{
-                    display: "flex",
-                    alignItems: "flex-start",
-                    gap: "10px",
-                    padding: "10px 13px",
-                    borderRadius: "9px",
-                    background: "rgba(255,255,255,0.025)",
-                    border: "1px solid rgba(167,139,250,0.07)",
-                  }}
-                >
-                  <span
-                    style={{
-                      width: "7px",
-                      height: "7px",
-                      borderRadius: "50%",
-                      marginTop: "4px",
-                      flexShrink: 0,
-                      background: log.success ? "#22c55e" : "#ef4444",
-                      boxShadow: log.success ? "0 0 6px #22c55e88" : "0 0 6px #ef444488",
-                    }}
-                  />
-                  <div style={{ flex: 1, minWidth: 0 }}>
-                    <p style={{ color: "rgba(255,255,255,0.85)", fontSize: "12px", fontWeight: 500, margin: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{log.summary}</p>
-                    <p style={{ color: "var(--text-dim)", fontSize: "10px", margin: "3px 0 0 0", fontFamily: "monospace", letterSpacing: "0.05em" }}>
-                      [{log.skill.toUpperCase()}] · {new Date(log.created_at).toLocaleString()}
-                    </p>
-                  </div>
+          <div style={{ display: "flex", flexDirection: "column", overflow: "hidden", maxHeight: "380px" }}>
+            {/* Toolbar */}
+            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "10px 20px 8px", flexShrink: 0 }}>
+              <span style={{ color: "var(--text-dim)", fontSize: "11px", fontFamily: "monospace", letterSpacing: "0.06em" }}>
+                {logsLoading ? "LOADING…" : `${logs.length} ${logs.length === 1 ? "ACTION" : "ACTIONS"}`}
+              </span>
+              <button
+                onClick={loadLogs}
+                disabled={logsLoading}
+                style={{
+                  fontSize: "11px", padding: "4px 10px", borderRadius: "7px", cursor: "pointer",
+                  background: "rgba(167,139,250,0.1)", border: "1px solid rgba(167,139,250,0.2)",
+                  color: "#c4b5fd", fontFamily: "inherit", opacity: logsLoading ? 0.5 : 1,
+                }}
+              >
+                Refresh
+              </button>
+            </div>
+            <div style={{ overflowY: "auto", flex: 1, padding: "0 20px 16px", display: "flex", flexDirection: "column", gap: "5px" }}>
+              {logsLoading ? (
+                <div style={{ textAlign: "center", color: "var(--text-dim)", fontSize: "12px", padding: "24px 0", fontFamily: "monospace", letterSpacing: "0.08em" }}>LOADING…</div>
+              ) : logs.length === 0 ? (
+                <div style={{ textAlign: "center", color: "var(--text-muted)", fontSize: "12px", padding: "24px 0" }}>
+                  No activity yet.
                 </div>
-              ))
-            )}
+              ) : (
+                logs.map((log) => {
+                  const badge = getSkillBadge(log.skill);
+                  return (
+                    <div
+                      key={log.id}
+                      style={{
+                        display: "grid",
+                        gridTemplateColumns: "auto 1fr auto",
+                        alignItems: "center",
+                        gap: "8px",
+                        padding: "9px 12px",
+                        borderRadius: "9px",
+                        background: "rgba(255,255,255,0.022)",
+                        border: "1px solid rgba(167,139,250,0.07)",
+                      }}
+                    >
+                      {/* Status dot */}
+                      <span
+                        style={{
+                          width: "7px", height: "7px", borderRadius: "50%", flexShrink: 0,
+                          background: log.success ? "#22c55e" : "#ef4444",
+                          boxShadow: log.success ? "0 0 5px #22c55e88" : "0 0 5px #ef444488",
+                        }}
+                        title={log.success ? "Success" : "Failed"}
+                      />
+                      {/* Summary + skill badge */}
+                      <div style={{ minWidth: 0 }}>
+                        <div style={{ display: "flex", alignItems: "center", gap: "6px", flexWrap: "wrap" }}>
+                          <span
+                            style={{
+                              fontSize: "10px", padding: "2px 7px", borderRadius: "20px", fontWeight: 500,
+                              background: badge.bg, color: badge.color, flexShrink: 0,
+                              border: `1px solid ${badge.color}30`,
+                            }}
+                          >
+                            {log.skill}
+                          </span>
+                          <p style={{
+                            color: "rgba(255,255,255,0.8)", fontSize: "12px", fontWeight: 500, margin: 0,
+                            overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap",
+                          }}>
+                            {log.summary}
+                          </p>
+                        </div>
+                      </div>
+                      {/* Relative time */}
+                      <span style={{ color: "var(--text-dim)", fontSize: "10px", fontFamily: "monospace", flexShrink: 0, whiteSpace: "nowrap" }}>
+                        {relativeTime(log.created_at)}
+                      </span>
+                    </div>
+                  );
+                })
+              )}
+            </div>
           </div>
         )}
       </div>

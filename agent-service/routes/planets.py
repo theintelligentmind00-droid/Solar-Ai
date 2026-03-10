@@ -47,7 +47,7 @@ async def list_planets() -> list[dict[str, Any]]:
     async with aiosqlite.connect(DB_PATH) as db:
         db.row_factory = aiosqlite.Row
         async with db.execute(
-            "SELECT id, name, status, orbit_radius, color, created_at "
+            "SELECT id, name, status, orbit_radius, color, created_at, last_activity_at "
             "FROM planets ORDER BY created_at"
         ) as cursor:
             rows = await cursor.fetchall()
@@ -71,7 +71,7 @@ async def get_planet(planet_id: str) -> dict[str, Any]:
     async with aiosqlite.connect(DB_PATH) as db:
         db.row_factory = aiosqlite.Row
         async with db.execute(
-            "SELECT id, name, status, orbit_radius, color, created_at FROM planets WHERE id = ?",
+            "SELECT id, name, status, orbit_radius, color, created_at, last_activity_at FROM planets WHERE id = ?",
             (planet_id,),
         ) as cursor:
             row = await cursor.fetchone()

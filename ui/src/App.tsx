@@ -1,5 +1,17 @@
 import { useEffect, useRef, useState } from "react";
 import { api, BASE_URL, type Planet } from "./api/agent";
+
+async function fireBriefingNotification() {
+  try {
+    const { sendNotification } = await import("@tauri-apps/plugin-notification");
+    sendNotification({
+      title: "Solar AI OS",
+      body: "Your daily briefing is ready.",
+    });
+  } catch {
+    // Not in Tauri context or notifications not available
+  }
+}
 import { ControlCenter } from "./components/ControlCenter";
 import { MetaphorGuide } from "./components/MetaphorGuide";
 import { Onboarding } from "./components/Onboarding";
@@ -70,6 +82,26 @@ export default function App() {
       if (r.status === 401) setNeedsKey(true);
     }).catch(() => {});
   }, [apiKey]);
+
+  // Poll daily briefing every 5 minutes; fire a notification when notification_pending is true
+  useEffect(() => {
+    if (!serviceOnline) return;
+    let lastGeneratedAt: string | null = null;
+    const check = async () => {
+      try {
+        const res = await api.getDailyBriefing() as { briefing: string; generated_at: string; notification_pending?: boolean };
+        if (res.notification_pending && res.generated_at !== lastGeneratedAt) {
+          lastGeneratedAt = res.generated_at;
+          void fireBriefingNotification();
+        }
+      } catch {
+        // ignore — service may not be ready
+      }
+    };
+    void check();
+    const id = setInterval(check, 5 * 60 * 1000);
+    return () => clearInterval(id);
+  }, [serviceOnline]);
 
   const submitKey = async () => {
     const key = keyInput.trim();

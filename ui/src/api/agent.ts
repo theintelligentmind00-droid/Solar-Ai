@@ -18,6 +18,7 @@ export interface Planet {
   orbit_radius: number;
   color: string;
   created_at: string;
+  last_activity_at?: string | null;
 }
 
 export interface Message {

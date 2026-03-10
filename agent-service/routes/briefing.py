@@ -33,10 +33,17 @@ def _get_client() -> AsyncAnthropic:
 @router.get("/daily")
 async def get_daily_briefing() -> dict[str, Any]:
     """Generate and return the morning briefing across all planets."""
+    from main import latest_briefing  # noqa: PLC0415
     from skills.briefing import generate_briefing  # noqa: PLC0415
 
     text = await generate_briefing()
-    return {"briefing": text, "generated_at": datetime.now(timezone.utc).isoformat()}
+    notification_pending = latest_briefing.get("notification_pending", False)
+    latest_briefing["notification_pending"] = False
+    return {
+        "briefing": text,
+        "generated_at": datetime.now(timezone.utc).isoformat(),
+        "notification_pending": notification_pending,
+    }
 
 
 @router.get("/schedule")

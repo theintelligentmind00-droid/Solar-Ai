@@ -524,6 +524,14 @@ async def chat(body: ChatRequest) -> dict[str, Any]:
     await save_message(body.planet_id, "user", body.message, db_path=DB_PATH)
     await save_message(body.planet_id, "assistant", reply, db_path=DB_PATH)
 
+    if body.planet_id != "sun":
+        async with aiosqlite.connect(DB_PATH) as db:
+            await db.execute(
+                "UPDATE planets SET last_activity_at = datetime('now') WHERE id = ?",
+                (body.planet_id,)
+            )
+            await db.commit()
+
     await smart_extract_memories(
         body.message, reply, body.planet_id, planet_name, api_key, db_path=DB_PATH
     )
@@ -622,6 +630,15 @@ async def chat_stream(body: ChatRequest) -> StreamingResponse:
             # Save messages and extract memories before signalling done
             await save_message(body.planet_id, "user", body.message, db_path=DB_PATH)
             await save_message(body.planet_id, "assistant", full_reply, db_path=DB_PATH)
+
+            if body.planet_id != "sun":
+                async with aiosqlite.connect(DB_PATH) as db:
+                    await db.execute(
+                        "UPDATE planets SET last_activity_at = datetime('now') WHERE id = ?",
+                        (body.planet_id,)
+                    )
+                    await db.commit()
+
             await smart_extract_memories(
                 body.message, full_reply, body.planet_id, planet_name, api_key, db_path=DB_PATH
             )

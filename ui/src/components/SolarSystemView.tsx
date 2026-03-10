@@ -40,6 +40,14 @@ function getCivLevel(planet: Planet): number {
   return 3;
 }
 
+function getActivityLevel(lastActivityAt?: string | null): 'hot' | 'warm' | 'cold' {
+  if (!lastActivityAt) return 'cold';
+  const diff = Date.now() - new Date(lastActivityAt).getTime();
+  if (diff < 60 * 60 * 1000) return 'hot';      // < 1 hour
+  if (diff < 24 * 60 * 60 * 1000) return 'warm'; // < 24 hours
+  return 'cold';
+}
+
 interface TCfg {
   hi: string; mid: string; lo: string;
   atmo: string; glow: string;
@@ -839,6 +847,31 @@ export function SolarSystemView({ onSelectPlanet, onOpenSettings, onOpenControlC
                 opacity={isAct ? 0.18 : isHov ? 0.12 : 0.05}
                 style={{ filter:`blur(${isAct ? 7 : 5}px)`, transition:"opacity 0.25s" }}
               />
+
+              {/* Activity glow — based on last_activity_at */}
+              {(() => {
+                const activity = getActivityLevel(planet.last_activity_at);
+                if (activity === 'hot') {
+                  return (
+                    <circle cx={px} cy={py} r={r + 22} fill={cfg.glow}
+                      style={{
+                        filter: `blur(8px)`,
+                        animation: 'planet-glow-pulse 2s ease-in-out infinite',
+                        pointerEvents: 'none',
+                      }}
+                    />
+                  );
+                }
+                if (activity === 'warm') {
+                  return (
+                    <circle cx={px} cy={py} r={r + 18} fill={cfg.glow}
+                      opacity={0.4}
+                      style={{ filter: `blur(6px)`, pointerEvents: 'none' }}
+                    />
+                  );
+                }
+                return null;
+              })()}
 
               {/* Inline clip paths */}
               <defs>

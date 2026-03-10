@@ -62,6 +62,7 @@ async def run_daily_briefing() -> None:
     text = await generate_briefing()
     latest_briefing["text"] = text
     latest_briefing["generated_at"] = datetime.now(timezone.utc).isoformat()
+    latest_briefing["notification_pending"] = True
     print(f"[Solar AI OS] Daily briefing generated at {latest_briefing['generated_at']}")
 
 

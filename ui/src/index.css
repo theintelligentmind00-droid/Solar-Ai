@@ -132,6 +132,11 @@ body::after {
   100% { transform: scale(1.8); opacity: 0; }
 }
 
+@keyframes planet-glow-pulse {
+  0%, 100% { opacity: 0.8; }
+  50%       { opacity: 0.2; }
+}
+
 /* ── Utilities ─────────────────────────────────────── */
 
 .glass {

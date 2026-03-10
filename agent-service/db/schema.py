@@ -16,7 +16,8 @@ CREATE TABLE IF NOT EXISTS planets (
     orbit_radius REAL NOT NULL DEFAULT 200.0,
     color TEXT NOT NULL DEFAULT '#FFD700',
     created_at TEXT NOT NULL DEFAULT (datetime('now')),
-    user_id TEXT NOT NULL DEFAULT 'local'
+    user_id TEXT NOT NULL DEFAULT 'local',
+    last_activity_at TEXT
 );
 
 CREATE TABLE IF NOT EXISTS messages (
@@ -124,6 +125,7 @@ _MIGRATIONS = [
     "ALTER TABLE memories ADD COLUMN importance REAL DEFAULT 0.5",
     "ALTER TABLE memories ADD COLUMN last_accessed TEXT",
     "ALTER TABLE memories ADD COLUMN access_count INTEGER DEFAULT 0",
+    "ALTER TABLE planets ADD COLUMN last_activity_at TEXT",
 ]
 
 
