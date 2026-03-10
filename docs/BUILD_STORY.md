@@ -5,6 +5,29 @@ Full technical build log — every decision, every fix, real code. Written for e
 
 ---
 
+## 📋 How to Import This Into Notion
+
+**Step 1 — Open this file**
+Open `docs/BUILD_STORY.md` in VS Code (or any text editor).
+
+**Step 2 — Copy everything**
+Select all (`Ctrl+A`) → Copy (`Ctrl+C`).
+
+**Step 3 — Paste into Notion**
+Open Notion → create a new full-page → paste (`Ctrl+V`).
+Notion auto-converts markdown: headings, code blocks, tables, bullets — all import cleanly.
+
+**Step 4 — Add the screenshots**
+The screenshots are on your machine at `C:\Users\liamf\Pictures\Screenshots\`.
+For each `📸 Screenshot` section below:
+- Click into the Notion page at that spot
+- Type `/image` → choose "Upload"
+- Upload the file listed in that section
+
+**That's it.** The page is ready to share.
+
+---
+
 ## The Idea
 
 The problem: every AI assistant is stateless and generic. You explain yourself every single time. Your startup goals, your co-founder's name, your communication style — blank slate on every conversation.
@@ -16,6 +39,9 @@ The insight: build an AI that organizes itself around how you actually think —
 **The solar system metaphor:** You are the Sun. Everything orbits around you. Each planet is a domain of your life — Work, Health, Finance, Travel. Each planet has its own gravity — its own memory, history, and context. The AI lives in the Sun and reaches into any planet when you need it.
 
 This is not just visual. It's the product philosophy.
+
+📸 **Upload:** `Screenshot 2026-03-09 201207.png`
+*(The Metaphor/Codex screen — Sun, Planets, Moons, Satellites explained)*
 
 ---
 
@@ -38,9 +64,10 @@ This is not just visual. It's the product philosophy.
 
 ---
 
-## 📸 Screenshot 1
-**What to capture:** The full app running — solar system view, planets orbiting, nothing selected.
-**How:** Open Solar AI OS → wait for it to fully load → screenshot the whole window.
+## 📸 Screenshot 1 — Solar System View
+
+📸 **Upload:** `Screenshot 2026-03-09 190810.png`
+*(The main solar system — dark space, orbiting planets, "Launch new mission" button)*
 
 ---
 
@@ -189,9 +216,10 @@ async def chat_stream(body: ChatRequest) -> StreamingResponse:
 
 ---
 
-## 📸 Screenshot 2
-**What to capture:** A chat response actively streaming — text appearing mid-reply, or a tool activity indicator showing ("Searching the web…").
-**How:** Open a planet → type something that requires web search (e.g. "what happened in tech news today") → screenshot mid-response.
+## 📸 Screenshot 2 — Streaming Chat
+
+📸 **Upload:** `Screenshot 2026-03-09 193954.png`
+*(Agent mid-response — streaming text or tool indicator visible)*
 
 ---
 
@@ -281,9 +309,10 @@ def build_context_block(planet_name, profile, categorized):
 
 ---
 
-## 📸 Screenshot 3
-**What to capture:** The Memory tab in a planet panel — showing the user profile section and typed memory badges (fact, goal, preference, etc.).
-**How:** Open a planet → click the "Memory" tab → screenshot the full tab.
+## 📸 Screenshot 3 — Memory Tab
+
+📸 **Upload:** `Screenshot 2026-03-09 200941.png`
+*(Memory tab — user profile, typed memory badges: fact, goal, preference)*
 
 ---
 
@@ -373,9 +402,10 @@ export const BASE_URL = import.meta.env.DEV
 
 ---
 
-## 📸 Screenshot 4
-**What to capture:** The Settings panel with Gmail connected (green checkmark).
-**How:** Open the app → click the settings icon (gear) → screenshot the Settings panel.
+## 📸 Screenshot 4 — Settings: Gmail + Calendar Connected
+
+📸 **Upload:** `Screenshot 2026-03-09 193722.png`
+*(Settings & Permissions — Gmail connected ✓, Google Calendar connected ✓, both green)*
 
 ---
 
@@ -411,16 +441,20 @@ async def gmail_callback(code: str, state: str):
 
 ---
 
-## 📸 Screenshot 5
-**What to capture:** The Onboarding screen — the first thing new users see.
-**How:** Open a private/incognito browser to `http://localhost:5173` in dev mode, OR clear `localStorage` in the app's DevTools and reload.
-**Alternative:** If you have a second machine or fresh install, screenshot that.
+## 📸 Screenshot 5 — Gmail OAuth Setup Flow
+
+📸 **Upload:** `Screenshot 2026-03-09 191224.png`
+*(Settings panel mid-setup — Gmail OAuth credentials form with 3-step instructions)*
 
 ---
 
-## 📸 Screenshot 6
-**What to capture:** A planet panel open with the Chat tab active — ideally mid-conversation with a few messages visible.
-**How:** Open a planet → have a short conversation → screenshot the chat panel.
+## 📸 Screenshot 6 — Gmail Summary in Chat
+
+📸 **Upload:** `Screenshot 2026-03-09 201023.png`
+*(Planet chat showing Gmail summary tool result — real emails summarized by Solar)*
+
+📸 **Also upload:** `Screenshot 2026-03-09 201145.png` and `Screenshot 2026-03-09 201154.png`
+*(Additional chat screenshots — briefings, calendar, or tool activity)*
 
 ---
 
@@ -584,6 +618,13 @@ Now the refresh check compares current time against stored expiry, refreshing 5 
 ### Google Calendar API Not Enabled
 
 The Calendar skill was getting `403 Forbidden`. Root cause: the Google Calendar API wasn't enabled in the Google Cloud project. The Gmail API and Calendar API are separate — you enable them individually in the API Library. One-click fix in the console.
+
+## 📸 Screenshot 7 — Briefings / Houston Tab
+
+📸 **Upload:** `Screenshot 2026-03-09 191017.png`
+*(Daily briefing or Houston mission control view)*
+
+---
 
 ### Tauri OAuth Popup Fix
 
