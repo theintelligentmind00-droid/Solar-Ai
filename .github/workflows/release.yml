@@ -1,0 +1,102 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+jobs:
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - platform: windows-latest
+            rust-target: x86_64-pc-windows-msvc
+            python-sidecar: solar-agent-x86_64-pc-windows-msvc.exe
+          - platform: macos-latest
+            rust-target: x86_64-apple-darwin
+            python-sidecar: solar-agent-x86_64-apple-darwin
+          - platform: ubuntu-22.04
+            rust-target: x86_64-unknown-linux-gnu
+            python-sidecar: solar-agent-x86_64-unknown-linux-gnu
+
+    runs-on: ${{ matrix.platform }}
+
+    steps:
+      - uses: actions/checkout@v4
+
+      # Python sidecar build
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Install Python dependencies
+        shell: bash
+        run: cd agent-service && pip install -r requirements.txt
+
+      - name: Build Python sidecar
+        shell: bash
+        run: |
+          cd agent-service
+          pip install pyinstaller
+          pyinstaller solar_agent.spec --distpath ../ui/src-tauri/binaries
+          # Rename to Tauri's expected triple format
+          cd ../ui/src-tauri/binaries
+          if [ -f "solar-agent.exe" ]; then
+            mv solar-agent.exe ${{ matrix.python-sidecar }}
+          elif [ -f "solar-agent" ]; then
+            mv solar-agent ${{ matrix.python-sidecar }}
+          fi
+
+      # Node.js
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+          cache-dependency-path: ui/package-lock.json
+
+      # Rust
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.rust-target }}
+
+      - uses: swatinem/rust-cache@v2
+        with:
+          workspaces: './ui/src-tauri -> target'
+
+      # Linux system dependencies for WebKit/GTK (required by Tauri v2)
+      - name: Install Linux dependencies
+        if: matrix.platform == 'ubuntu-22.04'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            libgtk-3-dev \
+            libwebkit2gtk-4.1-dev \
+            libappindicator3-dev \
+            librsvg2-dev \
+            patchelf
+
+      - name: Install npm dependencies
+        run: cd ui && npm ci
+
+      - uses: tauri-apps/tauri-action@v0
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          projectPath: ui
+          tagName: ${{ github.ref_name }}
+          releaseName: 'Solar AI OS ${{ github.ref_name }}'
+          releaseBody: |
+            ## Solar AI OS ${{ github.ref_name }}
+
+            ### Download
+            - **Windows**: Download the `.msi` installer
+            - **macOS**: Download the `.dmg` file
+            - **Linux**: Download the `.AppImage` or `.deb` file
+
+            ### First Run
+            You'll be prompted to enter your Anthropic API key on first launch.
+            Get one free at https://console.anthropic.com
+          releaseDraft: true
+          prerelease: false

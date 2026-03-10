@@ -1,8 +1,6 @@
-"""Gmail skill — OAuth2 via DB-stored credentials, pure httpx (no httplib2)."""
+"""Google Calendar skill — OAuth2 via DB-stored credentials, pure httpx."""
 from __future__ import annotations
 
-import asyncio
-import base64
 import json
 import logging
 from datetime import datetime, timedelta, timezone
@@ -15,9 +13,9 @@ from db.schema import DB_PATH
 
 logger = logging.getLogger(__name__)
 
-SCOPES = ["https://www.googleapis.com/auth/gmail.readonly"]
-SERVICE = "gmail"
-GMAIL_API = "https://gmail.googleapis.com/gmail/v1"
+SCOPES = ["https://www.googleapis.com/auth/calendar"]
+SERVICE = "calendar"
+CAL_API = "https://www.googleapis.com/calendar/v3"
 TOKEN_URI = "https://oauth2.googleapis.com/token"
 TIMEOUT = 20  # seconds
 
@@ -68,7 +66,7 @@ async def save_config(client_id: str, client_secret: str) -> None:
         await db.execute(
             """
             INSERT INTO oauth_configs (id, service, client_id, client_secret)
-            VALUES ('cfg-gmail', ?, ?, ?)
+            VALUES ('cfg-calendar', ?, ?, ?)
             ON CONFLICT(service) DO UPDATE SET
                 client_id = excluded.client_id,
                 client_secret = excluded.client_secret,
@@ -86,7 +84,7 @@ async def save_token(token_data: dict[str, Any]) -> None:
             """
             INSERT INTO oauth_tokens
                 (id, service, access_token, refresh_token, token_expiry, scopes)
-            VALUES ('tok-gmail', ?, ?, ?, ?, ?)
+            VALUES ('tok-calendar', ?, ?, ?, ?, ?)
             ON CONFLICT(service) DO UPDATE SET
                 access_token = excluded.access_token,
                 refresh_token = excluded.refresh_token,
@@ -116,7 +114,7 @@ async def _get_access_token() -> str:
     """Return a valid Bearer token, refreshing via httpx if needed."""
     creds_pair = await get_client_credentials()
     if creds_pair is None:
-        raise RuntimeError("Gmail not configured — save client credentials first.")
+        raise RuntimeError("Calendar not configured — save client credentials first.")
     client_id, client_secret = creds_pair
 
     async with aiosqlite.connect(DB_PATH) as db:
@@ -129,13 +127,12 @@ async def _get_access_token() -> str:
             row = await cur.fetchone()
 
     if row is None:
-        raise RuntimeError("Gmail not authorized — complete the OAuth flow first.")
+        raise RuntimeError("Calendar not authorized — complete the OAuth flow first.")
 
     access_token: str = row["access_token"]
     refresh_token: str | None = row["refresh_token"]
     token_expiry: str | None = row["token_expiry"]
 
-    # Determine whether the token needs refreshing.
     needs_refresh = False
     if not access_token or token_expiry is None:
         needs_refresh = True
@@ -144,7 +141,6 @@ async def _get_access_token() -> str:
             expiry_dt = datetime.fromisoformat(token_expiry)
             if expiry_dt.tzinfo is None:
                 expiry_dt = expiry_dt.replace(tzinfo=timezone.utc)
-            # Refresh 5 minutes before actual expiry.
             if datetime.now(timezone.utc) >= expiry_dt - timedelta(minutes=5):
                 needs_refresh = True
         except (ValueError, TypeError):
@@ -153,8 +149,8 @@ async def _get_access_token() -> str:
     if needs_refresh:
         if not refresh_token:
             raise RuntimeError(
-                "Gmail token expired and no refresh token available. "
-                "Please reconnect Gmail in Settings."
+                "Calendar token expired and no refresh token available. "
+                "Please reconnect Calendar in Settings."
             )
         async with httpx.AsyncClient(timeout=TIMEOUT) as client:
             resp = await client.post(
@@ -180,100 +176,131 @@ async def _get_access_token() -> str:
             "expiry": new_expiry,
             "scopes": token_data.get("scope", "").split() or SCOPES,
         })
-        logger.info("Gmail token refreshed, expires in %ds", expires_in)
+        logger.info("Calendar token refreshed, expires in %ds", expires_in)
 
     return access_token
 
 
-# ── Email access ──────────────────────────────────────────────────────────────
+# ── Event read helpers ────────────────────────────────────────────────────────
 
-async def list_unread(max_results: int = 10) -> list[dict[str, Any]]:
-    """Return a list of unread message snippets."""
+async def get_upcoming_events(days: int = 7) -> list[dict[str, Any]]:
+    """Return upcoming events from the primary calendar for the next `days` days."""
     token = await _get_access_token()
     auth_headers = {"Authorization": f"Bearer {token}"}
 
+    time_min = datetime.now(timezone.utc)
+    time_max = time_min + timedelta(days=days)
+
     async with httpx.AsyncClient(timeout=TIMEOUT, headers=auth_headers) as client:
-        # 1. List message IDs
         resp = await client.get(
-            f"{GMAIL_API}/users/me/messages",
-            params={"q": "is:unread", "maxResults": max_results},
+            f"{CAL_API}/calendars/primary/events",
+            params={
+                "timeMin": time_min.isoformat(),
+                "timeMax": time_max.isoformat(),
+                "maxResults": 20,
+                "singleEvents": "true",
+                "orderBy": "startTime",
+            },
         )
         resp.raise_for_status()
-        messages = resp.json().get("messages", [])
-        if not messages:
-            return []
+        result = resp.json()
 
-        # 2. Fetch metadata for each message concurrently
-        async def _fetch_one(msg_id: str) -> dict[str, Any]:
-            r = await client.get(
-                f"{GMAIL_API}/users/me/messages/{msg_id}",
-                params={
-                    "format": "metadata",
-                    "metadataHeaders": ["From", "Subject", "Date"],
-                },
-            )
-            r.raise_for_status()
-            return r.json()
-
-        details = await asyncio.gather(*[_fetch_one(m["id"]) for m in messages])
-
-    output: list[dict[str, Any]] = []
-    for msg, detail in zip(messages, details):
-        hdrs = {
-            h["name"]: h["value"]
-            for h in detail.get("payload", {}).get("headers", [])
+    events: list[dict[str, Any]] = []
+    for item in result.get("items", []):
+        start = item.get("start", {})
+        end = item.get("end", {})
+        event: dict[str, Any] = {
+            "id": item.get("id", ""),
+            "summary": item.get("summary", "(no title)"),
+            "start": start.get("dateTime") or start.get("date", ""),
+            "end": end.get("dateTime") or end.get("date", ""),
         }
-        output.append({
-            "id": msg["id"],
-            "from": hdrs.get("From", ""),
-            "subject": hdrs.get("Subject", "(no subject)"),
-            "date": hdrs.get("Date", ""),
-            "snippet": detail.get("snippet", ""),
-        })
-    return output
+        if item.get("location"):
+            event["location"] = item["location"]
+        if item.get("description"):
+            event["description"] = item["description"][:200]
+        events.append(event)
+
+    return events
 
 
-async def get_email_body(message_id: str) -> dict[str, Any]:
-    """Fetch the full body text of a single email by message ID."""
+async def get_todays_events() -> list[dict[str, Any]]:
+    """Return events occurring today (next 24 hours)."""
+    return await get_upcoming_events(days=1)
+
+
+def _fmt_event_time(start_raw: str) -> tuple[str, str]:
+    """Return (date_str, time_str) for display, Windows-safe."""
+    try:
+        dt = datetime.fromisoformat(start_raw.replace("Z", "+00:00"))
+        # Windows-safe: strip leading zeros manually
+        date_str = dt.strftime("%a %b ") + str(dt.day)
+        hour = dt.hour % 12 or 12
+        time_str = f"{hour}:{dt.strftime('%M')} {dt.strftime('%p')}"
+    except (ValueError, AttributeError):
+        date_str = start_raw
+        time_str = "all day"
+    return date_str, time_str
+
+
+async def get_events(days_ahead: int = 7) -> str:
+    """Get upcoming calendar events for the next N days. Returns a formatted list."""
+    if not await is_configured():
+        return "Calendar not connected. Connect it in Settings."
+
+    events = await get_upcoming_events(days=days_ahead)
+    if not events:
+        return f"No events in the next {days_ahead} days."
+
+    lines: list[str] = []
+    for e in events:
+        date_str, time_str = _fmt_event_time(e.get("start", ""))
+        lines.append(f"• {e.get('summary', '(no title)')} — {date_str} {time_str}")
+
+    return f"Upcoming events (next {days_ahead} days):\n" + "\n".join(lines)
+
+
+# ── Event write helpers ───────────────────────────────────────────────────────
+
+async def create_event(
+    title: str,
+    date: str,
+    time: str = "",
+    duration_minutes: int = 60,
+    description: str = "",
+) -> str:
+    """Create a calendar event. Returns confirmation or error string."""
+    if not await is_configured():
+        return "Calendar not connected. Connect it in Settings."
+
     token = await _get_access_token()
     auth_headers = {"Authorization": f"Bearer {token}"}
 
-    async with httpx.AsyncClient(timeout=TIMEOUT, headers=auth_headers) as client:
-        r = await client.get(
-            f"{GMAIL_API}/users/me/messages/{message_id}",
-            params={"format": "full"},
-        )
-        r.raise_for_status()
-        detail = r.json()
+    body: dict[str, Any] = {"summary": title}
+    if description:
+        body["description"] = description
 
-    hdrs = {
-        h["name"]: h["value"]
-        for h in detail.get("payload", {}).get("headers", [])
-    }
+    if time:
+        try:
+            start_dt = datetime.fromisoformat(f"{date}T{time}:00")
+        except ValueError:
+            return f"Invalid date/time: {date} {time}. Use YYYY-MM-DD and HH:MM."
+        end_dt = start_dt + timedelta(minutes=duration_minutes)
+        body["start"] = {"dateTime": start_dt.isoformat(), "timeZone": "UTC"}
+        body["end"] = {"dateTime": end_dt.isoformat(), "timeZone": "UTC"}
+    else:
+        body["start"] = {"date": date}
+        body["end"] = {"date": date}
 
-    def _extract_text(payload: dict[str, Any]) -> str:
-        mime = payload.get("mimeType", "")
-        if mime == "text/plain":
-            data = payload.get("body", {}).get("data", "")
-            if data:
-                return base64.urlsafe_b64decode(data + "==").decode(
-                    "utf-8", errors="replace"
-                )
-        if mime.startswith("multipart/"):
-            for part in payload.get("parts", []):
-                text = _extract_text(part)
-                if text:
-                    return text
-        return ""
-
-    body = _extract_text(detail.get("payload", {}))
-    if not body:
-        body = detail.get("snippet", "(no body)")
-
-    return {
-        "id": message_id,
-        "from": hdrs.get("From", ""),
-        "subject": hdrs.get("Subject", "(no subject)"),
-        "date": hdrs.get("Date", ""),
-        "body": body[:6000],
-    }
+    try:
+        async with httpx.AsyncClient(timeout=TIMEOUT, headers=auth_headers) as client:
+            resp = await client.post(
+                f"{CAL_API}/calendars/primary/events",
+                json=body,
+            )
+            resp.raise_for_status()
+        return f"Event created: {title} on {date}"
+    except httpx.HTTPStatusError as exc:
+        return f"Failed to create event: {exc.response.text}"
+    except Exception as exc:  # noqa: BLE001
+        return f"Failed to create event: {exc}"

@@ -6,7 +6,15 @@ from fastapi import Request
 from fastapi.responses import JSONResponse
 from starlette.middleware.base import BaseHTTPMiddleware
 
-_UNPROTECTED = {"/health", "/docs", "/openapi.json", "/redoc"}
+_UNPROTECTED = {
+    "/health",
+    "/docs",
+    "/openapi.json",
+    "/redoc",
+    "/setup/api-key",
+    "/gmail/callback",
+    "/calendar/callback",
+}
 
 
 class ApiKeyMiddleware(BaseHTTPMiddleware):
@@ -26,8 +34,10 @@ class ApiKeyMiddleware(BaseHTTPMiddleware):
             # No key configured — allow all (dev mode)
             return await call_next(request)
 
+        import hmac
+
         provided = request.headers.get("X-Api-Key", "")
-        if provided != secret:
+        if not hmac.compare_digest(provided, secret):
             return JSONResponse(
                 status_code=401,
                 content={"detail": "Invalid or missing API key"},

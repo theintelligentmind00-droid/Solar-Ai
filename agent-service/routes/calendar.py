@@ -1,4 +1,4 @@
-"""Gmail integration routes — OAuth2 flow + email access."""
+"""Google Calendar integration routes — OAuth2 flow + event access."""
 
 from __future__ import annotations
 
@@ -8,34 +8,30 @@ import secrets
 import time
 from typing import Any
 
-from anthropic import AsyncAnthropic
 from fastapi import APIRouter, HTTPException, Query
 from fastapi.responses import HTMLResponse
 from pydantic import BaseModel, Field
 
-import config
-from skills import gmail as gmail_skill
+from skills import calendar as calendar_skill
 
 logger = logging.getLogger(__name__)
 
-router = APIRouter(prefix="/gmail", tags=["gmail"])
-
-
-def _get_client() -> AsyncAnthropic:
-    """Create Anthropic client lazily so the API key is read at call time."""
-    return AsyncAnthropic(api_key=config.get_api_key())
+router = APIRouter(prefix="/calendar", tags=["calendar"])
 
 # In-memory CSRF state store: {state: issued_at_timestamp}
-# Tokens expire after 10 minutes and are single-use.
 _STATE_TTL = 600  # seconds
 _pending_states: dict[str, float] = {}
 
-REDIRECT_URI = "http://localhost:8000/gmail/callback"
+REDIRECT_URI = "http://localhost:8000/calendar/callback"
+CALENDAR_SCOPE = "https://www.googleapis.com/auth/calendar"
 
 
-class GmailConfigBody(BaseModel):
-    client_id: str = Field(..., min_length=10, max_length=256)
-    client_secret: str = Field(..., min_length=10, max_length=256)
+class CreateEventBody(BaseModel):
+    title: str = Field(..., min_length=1, max_length=500)
+    date: str = Field(..., pattern=r"^\d{4}-\d{2}-\d{2}$")
+    time: str = Field(default="", pattern=r"^(\d{2}:\d{2})?$")
+    duration_minutes: int = Field(default=60, ge=1, le=1440)
+    description: str = Field(default="", max_length=2000)
 
 
 def _purge_expired_states() -> None:
@@ -46,13 +42,13 @@ def _purge_expired_states() -> None:
         del _pending_states[k]
 
 
-# ── Setup & OAuth flow ────────────────────────────────────────────────────────
+# ── Status & OAuth flow ───────────────────────────────────────────────────────
 
 @router.get("/status")
-async def gmail_status() -> dict[str, Any]:
+async def calendar_status() -> dict[str, Any]:
     """Return connection status and whether credentials are saved."""
-    configured = await gmail_skill.has_config()
-    connected = await gmail_skill.is_configured()
+    configured = await calendar_skill.has_config()
+    connected = await calendar_skill.is_configured()
     return {
         "configured": configured,
         "connected": connected,
@@ -60,23 +56,32 @@ async def gmail_status() -> dict[str, Any]:
     }
 
 
-@router.post("/configure")
-async def configure_gmail(body: GmailConfigBody) -> dict[str, Any]:
-    """Save Google OAuth client credentials."""
-    if not body.client_id.strip() or not body.client_secret.strip():
-        raise HTTPException(status_code=422, detail="client_id and client_secret are required.")
-    await gmail_skill.save_config(body.client_id.strip(), body.client_secret.strip())
-    return {"ok": True, "message": "Gmail credentials saved."}
-
-
-@router.get("/auth-url")
+@router.post("/auth-url")
 async def get_auth_url() -> dict[str, str]:
-    """Generate a Google OAuth2 authorization URL."""
-    creds = await gmail_skill.get_client_credentials()
+    """Generate a Google OAuth2 authorization URL for Calendar."""
+    # Reuse Gmail credentials if Calendar credentials are not separately stored.
+    creds = await calendar_skill.get_client_credentials()
+    if creds is None:
+        # Fall back to Gmail credentials so the user doesn't have to re-enter them.
+        try:
+            from skills import gmail as gmail_skill  # local import to avoid circular risk
+
+            gmail_creds = await gmail_skill.get_client_credentials()
+            if gmail_creds is not None:
+                gmail_id, gmail_secret = gmail_creds
+                await calendar_skill.save_config(gmail_id, gmail_secret)
+                creds = (gmail_id, gmail_secret)
+        except Exception:
+            pass
+
     if creds is None:
         raise HTTPException(
             status_code=400,
-            detail="Gmail not configured. POST /gmail/configure first.",
+            detail=(
+                "Calendar not configured. "
+                "Either configure Gmail first (credentials will be reused) "
+                "or POST /calendar/configure."
+            ),
         )
 
     _purge_expired_states()
@@ -84,13 +89,12 @@ async def get_auth_url() -> dict[str, str]:
     state = secrets.token_urlsafe(32)
     _pending_states[state] = time.monotonic()
 
-    scope = "https://www.googleapis.com/auth/gmail.readonly"
     url = (
         "https://accounts.google.com/o/oauth2/v2/auth"
         f"?client_id={client_id}"
         f"&redirect_uri={REDIRECT_URI}"
         "&response_type=code"
-        f"&scope={scope}"
+        f"&scope={CALENDAR_SCOPE}"
         "&access_type=offline"
         "&prompt=consent"
         f"&state={state}"
@@ -99,7 +103,7 @@ async def get_auth_url() -> dict[str, str]:
 
 
 @router.get("/callback", response_class=HTMLResponse)
-async def gmail_callback(
+async def calendar_callback(
     code: str = Query(default=""),
     state: str = Query(default=""),
     error: str | None = Query(default=None),
@@ -124,10 +128,10 @@ async def gmail_callback(
             status_code=400,
         )
 
-    creds = await gmail_skill.get_client_credentials()
+    creds = await calendar_skill.get_client_credentials()
     if creds is None:
         return HTMLResponse(
-            _callback_page("error", "Gmail not configured on server."),
+            _callback_page("error", "Calendar not configured on server."),
             status_code=500,
         )
     client_id, client_secret = creds
@@ -149,7 +153,7 @@ async def gmail_callback(
         resp.raise_for_status()
         token_data = resp.json()
     except Exception as exc:
-        logger.error("Gmail token exchange failed: %s", exc)
+        logger.error("Calendar token exchange failed: %s", exc)
         return HTMLResponse(
             _callback_page("error", "Authorization failed. Please try again."),
             status_code=500,
@@ -161,76 +165,62 @@ async def gmail_callback(
         _dt.datetime.now(_dt.timezone.utc) + _dt.timedelta(seconds=_expires_in)
     ).isoformat()
 
-    await gmail_skill.save_token({
+    await calendar_skill.save_token({
         "access_token": token_data.get("access_token", ""),
         "refresh_token": token_data.get("refresh_token"),
         "expiry": _expiry_iso,
         "scopes": token_data.get("scope", "").split(),
     })
 
-    return HTMLResponse(_callback_page("success", "Gmail connected! You can close this tab."))
+    msg = "Google Calendar connected! You can close this tab."
+    return HTMLResponse(_callback_page("success", msg))
 
 
 @router.delete("/disconnect")
-async def disconnect_gmail() -> dict[str, str]:
-    """Remove stored Gmail token (revokes local access)."""
-    await gmail_skill.delete_token()
+async def disconnect_calendar() -> dict[str, str]:
+    """Remove stored Calendar token (revokes local access)."""
+    await calendar_skill.delete_token()
     return {"ok": "disconnected"}
 
 
-# ── Email access ──────────────────────────────────────────────────────────────
+# ── Event access ──────────────────────────────────────────────────────────────
 
-@router.get("/unread")
-async def get_unread() -> dict[str, Any]:
-    """Return unread emails."""
-    if not await gmail_skill.is_configured():
+@router.get("/events")
+async def get_events(days: int = Query(default=7, ge=1, le=365)) -> dict[str, Any]:
+    """Return upcoming calendar events as a formatted string."""
+    if not await calendar_skill.is_configured():
         raise HTTPException(
             status_code=503,
-            detail="Gmail not connected. Complete the OAuth flow first.",
+            detail="Calendar not connected. Complete the OAuth flow first.",
         )
     try:
-        messages = await gmail_skill.list_unread(max_results=15)
-        return {"count": len(messages), "messages": messages}
+        events_text = await calendar_skill.get_events(days_ahead=days)
+        return {"events": events_text}
     except Exception as exc:
-        logger.error("Failed to fetch unread emails: %s", exc)
-        raise HTTPException(status_code=500, detail="Failed to fetch emails.") from exc
+        logger.error("Failed to fetch calendar events: %s", exc)
+        raise HTTPException(status_code=500, detail="Failed to fetch events.") from exc
 
 
-@router.get("/summary")
-async def get_gmail_summary() -> dict[str, Any]:
-    """Return an AI-generated summary of unread emails."""
-    if not await gmail_skill.is_configured():
+@router.post("/event")
+async def create_event(body: CreateEventBody) -> dict[str, Any]:
+    """Create a new calendar event."""
+    if not await calendar_skill.is_configured():
         raise HTTPException(
             status_code=503,
-            detail="Gmail not connected. Complete the OAuth flow first.",
+            detail="Calendar not connected. Complete the OAuth flow first.",
         )
     try:
-        messages = await gmail_skill.list_unread(max_results=15)
+        result = await calendar_skill.create_event(
+            title=body.title,
+            date=body.date,
+            time=body.time,
+            duration_minutes=body.duration_minutes,
+            description=body.description,
+        )
+        return {"result": result}
     except Exception as exc:
-        logger.error("Failed to fetch emails for summary: %s", exc)
-        raise HTTPException(status_code=500, detail="Failed to fetch emails.") from exc
-
-    if not messages:
-        return {"summary": "No unread emails.", "count": 0}
-
-    email_list = "\n".join(
-        f"- From: {m['from']}\n  Subject: {m['subject']}\n  Preview: {m['snippet'][:120]}"
-        for m in messages
-    )
-    prompt = (
-        f"You are Solar, a sharp personal AI. Summarize these {len(messages)} unread"
-        f" emails in 3-5 bullet points. Flag anything urgent or needing a reply."
-        f" Be direct.\n\n{email_list}"
-    )
-    response = await _get_client().messages.create(
-        model="claude-haiku-4-5-20251001",
-        max_tokens=300,
-        messages=[{"role": "user", "content": prompt}],
-    )
-    summary_text = (
-        response.content[0].text if response.content else "Unable to summarize."
-    )
-    return {"summary": summary_text, "count": len(messages), "messages": messages}
+        logger.error("Failed to create calendar event: %s", exc)
+        raise HTTPException(status_code=500, detail="Failed to create event.") from exc
 
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
@@ -242,7 +232,7 @@ def _callback_page(status: str, message: str) -> str:
     return f"""<!DOCTYPE html>
 <html>
 <head>
-  <title>Solar AI \u2014 Gmail {status}</title>
+  <title>Solar AI \u2014 Calendar {status}</title>
   <meta http-equiv="Content-Security-Policy"
         content="default-src 'none'; style-src 'unsafe-inline'">
   <style>

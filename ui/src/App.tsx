@@ -1,6 +1,8 @@
-import { useEffect, useState } from "react";
-import { api, type Planet } from "./api/agent";
+import { useEffect, useRef, useState } from "react";
+import { api, BASE_URL, type Planet } from "./api/agent";
 import { ControlCenter } from "./components/ControlCenter";
+import { MetaphorGuide } from "./components/MetaphorGuide";
+import { Onboarding } from "./components/Onboarding";
 import { PlanetDetail } from "./components/PlanetDetail";
 import { SettingsPanel } from "./components/SettingsPanel";
 import ShootingStars from "./components/ShootingStars";
@@ -8,25 +10,63 @@ import { SolarSystemView } from "./components/SolarSystemView";
 import "./index.css";
 
 export default function App() {
+  const [onboarded, setOnboarded] = useState<boolean>(
+    () => localStorage.getItem("solar_onboarded") === "true" || !!sessionStorage.getItem("solar_api_key")
+  );
   const [selectedPlanet, setSelectedPlanet]     = useState<Planet | null>(null);
   const [serviceOnline, setServiceOnline]       = useState<boolean | null>(null);
   const [showSettings, setShowSettings]         = useState(false);
   const [showControlCenter, setShowControlCenter] = useState(false);
+  const [showMetaphorGuide, setShowMetaphorGuide] = useState(false);
+  const [planetRefreshKey, setPlanetRefreshKey] = useState(0);
   const [apiKey, setApiKey] = useState<string>(sessionStorage.getItem("solar_api_key") ?? "");
   const [keyInput, setKeyInput] = useState("");
   const [keyError, setKeyError] = useState(false);
   const [checkingKey, setCheckingKey] = useState(false);
   const [needsKey, setNeedsKey] = useState(false);
+  const [panelWidth, setPanelWidth] = useState(420);
+  const isResizing = useRef(false);
+
+  const startResize = (e: React.MouseEvent) => {
+    isResizing.current = true;
+    const startX = e.clientX;
+    const startWidth = panelWidth;
+    const onMove = (mv: MouseEvent) => {
+      if (!isResizing.current) return;
+      const newWidth = Math.max(320, Math.min(760, startWidth + (startX - mv.clientX)));
+      setPanelWidth(newWidth);
+    };
+    const onUp = () => {
+      isResizing.current = false;
+      document.removeEventListener("mousemove", onMove);
+      document.removeEventListener("mouseup", onUp);
+    };
+    document.addEventListener("mousemove", onMove);
+    document.addEventListener("mouseup", onUp);
+  };
 
   useEffect(() => {
-    api.health()
-      .then(() => setServiceOnline(true))
-      .catch(() => setServiceOnline(false));
+    let cancelled = false;
+    const poll = async () => {
+      for (let i = 0; i < 30; i++) {
+        if (cancelled) return;
+        try {
+          await api.health();
+          if (!cancelled) setServiceOnline(true);
+          return;
+        } catch {
+          await new Promise((r) => setTimeout(r, 2000));
+        }
+      }
+      if (!cancelled) setServiceOnline(false);
+    };
+    poll();
+    return () => { cancelled = true; };
   }, []);
 
   useEffect(() => {
     if (apiKey) return; // already have a key
-    fetch("/api/health").then((r) => {
+    fetch(`${BASE_URL}/health`).then((r) => {
       if (r.status === 401) setNeedsKey(true);
     }).catch(() => {});
   }, [apiKey]);
@@ -37,7 +77,7 @@ export default function App() {
     setCheckingKey(true);
     setKeyError(false);
     try {
-      const r = await fetch("/api/health", { headers: { "X-Api-Key": key } });
+      const r = await fetch(`${BASE_URL}/health`, { headers: { "X-Api-Key": key } });
       if (r.ok) {
         sessionStorage.setItem("solar_api_key", key);
         setApiKey(key);
@@ -50,6 +90,10 @@ export default function App() {
       setCheckingKey(false);
     }
   };
+
+  if (!onboarded) {
+    return <Onboarding onComplete={() => setOnboarded(true)} />;
+  }
 
   return (
     <div className="w-screen h-screen overflow-hidden relative">
@@ -115,7 +159,22 @@ export default function App() {
       {/* ── Persistent shooting stars ───────────────── */}
       <ShootingStars />
 
-      {/* ── Offline banner ──────────────────────────── */}
+      {/* ── Starting indicator (null = still polling) ── */}
+      {serviceOnline === null && (
+        <div
+          className="absolute top-0 left-0 right-0 z-50 text-xs text-center py-2"
+          style={{
+            background: "rgba(20,16,40,0.75)",
+            color: "rgba(167,139,250,0.7)",
+            borderBottom: "1px solid rgba(167,139,250,0.12)",
+            animation: "pulse 2s ease-in-out infinite",
+          }}
+        >
+          Starting Solar AI…
+        </div>
+      )}
+
+      {/* ── Offline banner (false = confirmed unreachable after all retries) ── */}
       {serviceOnline === false && (
         <div
           className="absolute top-0 left-0 right-0 z-50 text-xs text-center py-2"
@@ -125,10 +184,7 @@ export default function App() {
             borderBottom: "1px solid rgba(239,68,68,0.25)",
           }}
         >
-          Agent service offline —{" "}
-          <code className="font-mono px-1 rounded" style={{ background: "rgba(185,28,28,0.5)" }}>
-            uvicorn main:app --reload
-          </code>
+          Solar AI is starting up — please wait a moment…
         </div>
       )}
 
@@ -137,7 +193,9 @@ export default function App() {
         onSelectPlanet={setSelectedPlanet}
         onOpenSettings={() => setShowSettings(true)}
         onOpenControlCenter={() => setShowControlCenter(true)}
+        onOpenMetaphorGuide={() => setShowMetaphorGuide(true)}
         activePlanetId={selectedPlanet?.id ?? null}
+        refreshKey={planetRefreshKey}
       />
 
       {/* ── Soft dim when panel is open ─────────────── */}
@@ -160,17 +218,40 @@ export default function App() {
           right: 0,
           top: 0,
           height: "100vh",
-          width: "420px",
+          width: `${panelWidth}px`,
           transform: selectedPlanet ? "translateX(0)" : "translateX(105%)",
-          transition: "transform 0.32s cubic-bezier(0.4, 0, 0.2, 1)",
+          transition: isResizing.current ? "none" : "transform 0.32s cubic-bezier(0.4, 0, 0.2, 1)",
           zIndex: 30,
           pointerEvents: selectedPlanet ? "auto" : "none",
         }}
       >
+        {/* Drag handle on left edge */}
+        {selectedPlanet && (
+          <div
+            onMouseDown={startResize}
+            style={{
+              position: "absolute",
+              left: 0,
+              top: 0,
+              width: "5px",
+              height: "100%",
+              cursor: "ew-resize",
+              zIndex: 10,
+              background: "transparent",
+              transition: "background 0.15s",
+            }}
+            onMouseEnter={(e) => { (e.currentTarget as HTMLDivElement).style.background = "rgba(167,139,250,0.25)"; }}
+            onMouseLeave={(e) => { (e.currentTarget as HTMLDivElement).style.background = "transparent"; }}
+          />
+        )}
         {selectedPlanet && (
           <PlanetDetail
             planet={selectedPlanet}
             onBack={() => setSelectedPlanet(null)}
+            onDeleted={() => {
+              setSelectedPlanet(null);
+              setPlanetRefreshKey((k) => k + 1);
+            }}
           />
         )}
       </div>
@@ -182,6 +263,9 @@ export default function App() {
 
       {/* ── Settings overlay ────────────────────────── */}
       {showSettings && <SettingsPanel onClose={() => setShowSettings(false)} />}
+
+      {/* ── Metaphor Guide overlay ───────────────────── */}
+      {showMetaphorGuide && <MetaphorGuide onClose={() => setShowMetaphorGuide(false)} />}
     </div>
   );
 }

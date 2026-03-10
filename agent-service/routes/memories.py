@@ -17,9 +17,13 @@ async def get_planet_memories(planet_id: str) -> list[dict[str, Any]]:
         db.row_factory = aiosqlite.Row
         async with db.execute(
             """
-            SELECT id, planet_id, key, value, created_at FROM memories
+            SELECT id, planet_id, key, value,
+                   COALESCE(type, 'fact') as type,
+                   COALESCE(importance, 0.5) as importance,
+                   created_at
+            FROM memories
             WHERE planet_id = ? OR planet_id IS NULL
-            ORDER BY created_at ASC
+            ORDER BY COALESCE(importance, 0.5) DESC, created_at ASC
             """,
             (planet_id,),
         ) as cursor:
@@ -35,9 +39,13 @@ async def get_global_memories() -> list[dict[str, Any]]:
         db.row_factory = aiosqlite.Row
         async with db.execute(
             """
-            SELECT id, planet_id, key, value, created_at FROM memories
+            SELECT id, planet_id, key, value,
+                   COALESCE(type, 'fact') as type,
+                   COALESCE(importance, 0.5) as importance,
+                   created_at
+            FROM memories
             WHERE planet_id IS NULL
-            ORDER BY created_at ASC
+            ORDER BY COALESCE(importance, 0.5) DESC, created_at ASC
             """,
         ) as cursor:
             rows = await cursor.fetchall()

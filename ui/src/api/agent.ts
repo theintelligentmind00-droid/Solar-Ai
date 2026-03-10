@@ -1,10 +1,12 @@
-const BASE_URL = "/api";
+// In dev, Vite proxies /api → http://localhost:8000 (stripping the prefix).
+// In the packaged Tauri app there is no Vite proxy, so call the sidecar directly.
+export const BASE_URL = import.meta.env.DEV ? "/api" : "http://localhost:8000";
 
 function getApiKey(): string {
   return sessionStorage.getItem("solar_api_key") ?? "";
 }
 
-function authHeaders(): Record<string, string> {
+export function authHeaders(): Record<string, string> {
   const key = getApiKey();
   return key ? { "X-Api-Key": key } : {};
 }
@@ -44,6 +46,8 @@ export interface Memory {
   planet_id: string | null;
   key: string;
   value: string;
+  type: string;
+  importance: number;
   created_at: string;
 }
 
@@ -149,6 +153,18 @@ export const api = {
     return r.json() as Promise<{ planet_id: string; planet_name: string; briefing: string }>;
   },
 
+  getDailyBriefing: () =>
+    request<{ briefing: string; generated_at: string }>("/briefing/daily"),
+
+  getBriefingSchedule: () =>
+    request<{ hour: number; minute: number; enabled: boolean }>("/briefing/schedule"),
+
+  setBriefingSchedule: (hour: number, minute: number, enabled = true) =>
+    request<{ ok: boolean; hour: number; minute: number; enabled: boolean }>("/briefing/schedule", {
+      method: "POST",
+      body: JSON.stringify({ hour, minute, enabled }),
+    }),
+
   getGmailStatus: () =>
     request<{ configured: boolean; connected: boolean; redirect_uri: string }>(
       "/gmail/status"
@@ -171,4 +187,39 @@ export const api = {
 
   disconnectGmail: () =>
     request<{ ok: string }>("/gmail/disconnect", { method: "DELETE" }),
+
+  saveApiKey: (apiKey: string) =>
+    request<{ ok: boolean }>("/setup/api-key", {
+      method: "POST",
+      body: JSON.stringify({ api_key: apiKey }),
+    }),
+
+  getApiKeyStatus: () =>
+    request<{ configured: boolean }>("/setup/api-key/status"),
+
+  deleteApiKey: () =>
+    request<{ ok: boolean }>("/setup/api-key", { method: "DELETE" }),
+
+  getUserProfile: () =>
+    request<{ profile: Record<string, string> }>("/setup/profile"),
+
+  getCalendarStatus: () =>
+    request<{ configured: boolean; connected: boolean; redirect_uri: string }>(
+      "/calendar/status"
+    ),
+
+  getCalendarAuthUrl: () =>
+    request<{ url: string }>("/calendar/auth-url", { method: "POST" }),
+
+  disconnectCalendar: () =>
+    request<{ ok: string }>("/calendar/disconnect", { method: "DELETE" }),
+
+  runShellCommand: (command: string, workingDir?: string) =>
+    request<{ output: string; exit_code: number; blocked: boolean }>("/shell/run", {
+      method: "POST",
+      body: JSON.stringify({ command, working_dir: workingDir }),
+    }),
+
+  getShellHistory: () =>
+    request<Array<{ summary: string; created_at: string }>>("/shell/history"),
 };

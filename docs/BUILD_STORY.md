@@ -1,275 +1,606 @@
 # Solar AI OS — Build Story
 > "The AI that orbits around you."
 
-This document is the full story of Solar AI OS — every decision, every dead end, every breakthrough — written as we went. It doubles as internal documentation and the foundation of our public narrative.
+Full technical build log — every decision, every fix, real code. Written for engineers.
 
 ---
 
 ## The Idea
 
-**The problem:** Everyone is building AI assistants that are generic, stateless, and forgettable. They don't know you. They don't remember what you told them last week. They live in a browser tab you close and reopen and start from zero every time.
+The problem: every AI assistant is stateless and generic. You explain yourself every single time. Your startup goals, your co-founder's name, your communication style — blank slate on every conversation.
 
-**The insight:** Your life isn't one thing. You're a founder AND a parent AND someone trying to stay healthy AND someone managing money. Generic AI treats all of that as one blob. We wanted AI that organizes itself around how you actually think — in domains, in contexts, in worlds.
+The second problem: your life isn't one thing. Work is not the same as health. Health is not the same as finance. Generic chat treats all of it as one blob.
 
-**The metaphor:** A solar system. You are the Sun. Everything orbits around you. Each planet is a domain of your life — Work, Health, Finance, Travel, whatever matters to you. Each planet has its own gravity — its own memory, history, and context. The AI lives in the Sun and reaches into any planet when you need it.
+The insight: build an AI that organizes itself around how you actually think — in domains, in contexts, in worlds.
 
-This metaphor isn't just visual. It's the product philosophy. **You are the center. The AI orbits around you.**
+**The solar system metaphor:** You are the Sun. Everything orbits around you. Each planet is a domain of your life — Work, Health, Finance, Travel. Each planet has its own gravity — its own memory, history, and context. The AI lives in the Sun and reaches into any planet when you need it.
+
+This is not just visual. It's the product philosophy.
 
 ---
 
-## Phase 0 — Laying the Foundation
+## Stack Decision
 
-### The Stack Decision
-
-We evaluated several approaches before landing on this stack:
-
-| Option | Considered | Why We Rejected It |
-|--------|------------|-------------------|
-| Electron + Node backend | Yes | Too heavy, Chromium + Node = huge bundle |
-| Pure web app | Yes | No local file access, no sidecar, no offline |
-| Swift/SwiftUI | Yes | macOS only, no Windows |
-| **Tauri + Python sidecar** | **Chosen** | Lightweight Rust shell, Python for AI logic, cross-platform |
+| Option | Verdict | Reason |
+|--------|---------|--------|
+| Electron + Node | Rejected | Chromium + Node runtime = massive bundle, no clean sidecar story |
+| Pure web app | Rejected | No local file access, no offline, no OS integration |
+| Swift/SwiftUI | Rejected | macOS only |
+| **Tauri v2 + Python sidecar** | **Chosen** | Lightweight Rust shell (~4MB), Python for all AI logic, cross-platform |
 
 **Final stack:**
-- **Tauri v2** (Rust) — desktop shell, window management, OS integration
-- **React + TypeScript + Vite** — UI, hot reload, type safety
-- **Python FastAPI** — AI logic, tool execution, all LLM calls
-- **SQLite (aiosqlite)** — local database, zero config, works in packaged app
-- **Anthropic Claude API** — claude-sonnet for chat, claude-haiku for background tasks
-- **PyInstaller** — bundles Python + all dependencies into a single `.exe` sidecar
-
-**Why Python for the backend instead of Rust?**
-Claude's SDK is Python-first. The ecosystem for AI tooling (Gmail API, calendar, web search) is Python. Moving fast matters more than optimal performance for a v0.1.
-
-**Why local-first?**
-Privacy is a genuine competitive advantage. Your emails, your calendar, your files, your conversations — none of it leaves your machine. No cloud DB, no telemetry, no SaaS middleman. Your data stays yours.
-
-### Initial Commit
-`7b362e6` — First commit. Empty shell. The name, the philosophy, the directory structure.
+- **Tauri v2** (Rust) — desktop shell, OS integration, spawns the Python sidecar
+- **React + TypeScript + Vite** — UI layer, pure display, zero direct DB access
+- **Python FastAPI** — all AI logic, tool execution, memory, LLM calls
+- **SQLite + aiosqlite** — zero-config local database, fully async
+- **Anthropic Claude API** — `claude-sonnet-4-6` for chat, `claude-haiku-4-5` for background extraction
+- **PyInstaller** — bundles the entire Python runtime + dependencies into one `.exe`
 
 ---
 
-## Phase 1 — The MVP
-
-### Step 1: Agent Service + SQLite Schema
-
-The first real code was the Python agent service. Core decisions:
-
-**Database schema (SQLite):**
-- `planets` table — user's domains (Work, Health, etc.)
-- `messages` table — full conversation history per planet
-- `memories` table — what Solar knows about the user
-- `tasks` table — tasks surfaced or created through conversation
-- `user_profile` table — personality/communication style observations
-
-**DB path:** `~/.solar-ai/solar_ai.db`
-
-Why home directory? Packaged apps can't write to `Program Files`. Early mistake: we had the path as relative to the executable. This broke everything in production. Fixed to absolute home dir path.
-
-📸 *[Screenshot: SQLite schema diagram / DB browser view]*
-
-### Step 2: Claude Integration
-
-The chat endpoint (`/chat`) was the heart of the service. Key architectural decision:
-
-**Tool loop pattern:** Claude responds → detects `tool_use` stop reason → executes tool → sends result back → Claude continues. This loop runs up to 10 iterations before forcing a final answer.
-
-**Tools available to Solar:**
-- `get_gmail_summary` / `get_unread_emails` / `get_email_body` — Gmail integration
-- `search_web` / `fetch_url` — Brave Search + Tavily fallback
-- `get_upcoming_events` / `create_calendar_event` — Google Calendar
-- `read_file` — local file access (up to 1MB)
-- `run_shell_command` — sandboxed terminal (blocklist enforced, 30s timeout, no `shell=True`)
-
-**Security thinking:** Shell access is genuinely powerful. We blocked: `rm -rf`, `del /f`, `format`, `shutdown`, `reboot`, `mkfs`, `dd`, and anything that pipes to shell. Working directory sandboxed to user home. Every tool call is logged.
-
-### Step 3: The Solar System UI
-
-This is where the product became real. The solar system isn't decoration — it IS the navigation paradigm.
-
-📸 *[Screenshot: Solar system main view with planets orbiting]*
-
-**Implementation:**
-- Pure CSS animations — orbiting planets use `transform: rotate(Xdeg) translateX(Ypx) rotate(-Xdeg)` to keep planets upright while orbiting
-- Each planet is a clickable entity that slides open a side panel
-- The Sun is the central AI — clicking it opens a global chat (future feature: proactive notifications)
-- Planets are color-coded (auto-generated from name hash for consistency)
-
-**The panel:** Slides in from the right. Three tabs: Chat, Tasks, Memory. Resizable via drag handle on the left edge (min 320px, max 760px).
-
-📸 *[Screenshot: Planet detail panel open with chat tab]*
-
-### Step 4: Auth + Security
-
-**SOLAR_API_KEY:** Optional auth gate. If set, every request requires `X-Api-Key` header. Designed for when we host a relay server — users set a Solar-specific key, not their Anthropic key.
-
-**CORS challenge (packaged app):**
-On Windows, Tauri v2 uses Chromium's WebView2. The origin is `http://tauri.localhost` — NOT `tauri://localhost` (which is macOS/Linux). This burned us. Every POST request failed with CORS errors in the packaged app even though the dev version worked fine. Fixed by adding all four origin variants to the allowlist.
-
-**API key storage:** OS keychain (Windows Credential Manager) via `keyring` library, with `~/.solar-ai/.env` as fallback. Never stored in the app bundle.
-
-📸 *[Screenshot: Onboarding — API key setup screen]*
-
-### Step 5: Gmail OAuth
-
-Full OAuth2 flow — in-app, no file management required.
-
-The flow:
-1. User clicks "Connect Gmail" in Settings
-2. App calls `/gmail/auth` → server generates state token → returns Google OAuth URL
-3. UI opens URL in system browser via `open::that()`
-4. User authorizes → Google redirects to `http://localhost:8000/gmail/callback`
-5. Server exchanges code for tokens → stores in keychain + `.env`
-6. UI polls `/gmail/status` until connected
-
-**Key decision:** State tokens are 10-minute TTL, single-use. Prevents CSRF. The callback page is a plain HTML page served by FastAPI — no React involved, no WebSocket needed.
-
-📸 *[Screenshot: Settings panel — Gmail connected, green checkmark]*
-
-### Step 6: Tasks System
-
-Tasks surface organically through conversation. When Solar notices you're committing to something ("I need to finish that report by Friday"), it can create a task. The Tasks tab in each planet shows pending/completed tasks for that domain.
-
-Also built: APScheduler integration for daily briefings at 8am. Solar generates a personalized morning briefing based on your emails, calendar, and what it knows about you — delivered as a notification when you open the app.
-
-📸 *[Screenshot: Tasks tab with a list of tasks]*
+## 📸 Screenshot 1
+**What to capture:** The full app running — solar system view, planets orbiting, nothing selected.
+**How:** Open Solar AI OS → wait for it to fully load → screenshot the whole window.
 
 ---
 
-## Phase 2 — Making It Real
+## The Rust Sidecar — `lib.rs`
 
-### The Packaging Problem
+The Tauri shell (Rust) spawns the Python FastAPI server as a sidecar process. This is the entry point when the app opens.
 
-Packaging a Python + Tauri app into a distributable installer was the hardest engineering challenge. Issues we hit:
+Three things it does that matter:
 
-**Problem 1: PyInstaller hidden imports**
-`apscheduler` and `keyring` use dynamic imports that PyInstaller can't detect automatically. The sidecar would start but crash immediately with `ModuleNotFoundError`. Fix: explicitly add them to `hiddenimports` in `solar_agent.spec`.
+**1. Kill stale processes before spawning.** If the app crashes or is force-quit, the old `solar-agent.exe` stays alive and holds port 8000. Next launch fails. Fix: unconditional `taskkill` before every spawn.
 
-**Problem 2: DB path**
-Relative path worked in dev, silently broke in production (the exe runs from `C:\Program Files\...` which is read-only). Fix: `Path.home() / ".solar-ai" / "solar_ai.db"`.
+**2. Stream all sidecar stdout/stderr to a log file.** No debugger in production — `~/.solar-ai/sidecar.log` is the only window into what the Python process is doing.
 
-**Problem 3: Stale process on restart**
-When the app relaunches after a crash, the old `solar-agent.exe` still holds port 8000. The new sidecar fails to start. Fix: `taskkill /F /IM solar-agent.exe /T` in `lib.rs` before spawning the new sidecar.
+**3. Kill the sidecar cleanly on window close.** Without this, closing the UI leaves the Python server running forever in the background.
 
-**Problem 4: CORS in packaged app**
-See above — Windows WebView2 origin is `http://tauri.localhost`. Added to CORS allowlist.
+```rust
+// lib.rs — abbreviated
 
-**Problem 5: Hardcoded `/api/` prefix**
-Vite's dev proxy strips `/api` before forwarding to `localhost:8000`. In production there's no proxy — bare `http://localhost:8000` is correct. Four places in the UI had hardcoded `/api/` fetch calls. Fixed with `import.meta.env.DEV` detection.
+pub fn run() {
+    tauri::Builder::default()
+        .setup(|app| {
+            // Kill any stale solar-agent from a previous session
+            let _ = std::process::Command::new("taskkill")
+                .args(["/F", "/IM", "solar-agent.exe", "/T"])
+                .output();
+
+            let (rx, child) = app.shell()
+                .sidecar("solar-agent")?
+                .spawn()?;
+
+            // Stream stdout/stderr to ~/.solar-ai/sidecar.log
+            tauri::async_runtime::spawn(async move {
+                let mut rx = rx;
+                while let Some(event) = rx.recv().await {
+                    match event {
+                        CommandEvent::Stdout(line) => write_log(&lp2, &format!("[stdout] {}", ...)),
+                        CommandEvent::Stderr(line) => write_log(&lp2, &format!("[stderr] {}", ...)),
+                        CommandEvent::Terminated(status) => break,
+                        _ => {}
+                    }
+                }
+            });
+
+            // Store handle so we can kill it on window close
+            *app.state::<SidecarState>().0.lock().unwrap() = Some(child);
+            Ok(())
+        })
+        .on_window_event(|window, event| {
+            if let tauri::WindowEvent::Destroyed = event {
+                if let Some(child) = state.0.lock().unwrap().take() {
+                    let _ = child.kill(); // clean shutdown
+                }
+            }
+        })
+}
+```
+
+---
+
+## The Agentic Tool Loop — `chat.py`
+
+This is the core of the product. Claude gets a message, decides whether to use tools, uses them, and loops until it has a final answer. Up to 8 rounds.
+
+The non-streaming version (still used internally) is clean:
+
+```python
+# Agentic loop: let Claude call tools until it produces a final text reply
+for _ in range(8):  # max 8 tool rounds
+    response = await client.messages.create(
+        model="claude-sonnet-4-6",
+        max_tokens=1024,
+        system=system_prompt,
+        tools=_TOOLS,
+        messages=messages,
+    )
+
+    if response.stop_reason == "tool_use":
+        tool_results = []
+        assistant_content = []
+
+        for block in response.content:
+            assistant_content.append(block)
+            if block.type == "tool_use":
+                result = await _run_tool(block.name, block.input)
+                tool_results.append({
+                    "type": "tool_result",
+                    "tool_use_id": block.id,
+                    "content": result,
+                })
+
+        messages.append({"role": "assistant", "content": assistant_content})
+        messages.append({"role": "user", "content": tool_results})
+        continue  # back to top — Claude sees tool results and continues
+
+    # stop_reason == "end_turn" — we have a final answer
+    reply = next(block.text for block in response.content if hasattr(block, "text"))
+    break
+```
+
+The streaming version is more complex — it has to stream text tokens AND handle tool calls in the same generator:
+
+```python
+@router.post("/stream")
+async def chat_stream(body: ChatRequest) -> StreamingResponse:
+
+    async def generate():
+        for _ in range(8):  # agentic loop
+            async with client.messages.stream(
+                model="claude-sonnet-4-6",
+                max_tokens=1024,
+                system=system_prompt,
+                tools=_TOOLS,
+                messages=messages,
+            ) as stream:
+                # Stream text tokens to the client in real-time
+                async for text in stream.text_stream:
+                    yield f"data: {json.dumps({'type': 'text', 'content': text})}\n\n"
+                final = await stream.get_final_message()
+
+            if final.stop_reason == "tool_use":
+                for block in final.content:
+                    if block.type == "tool_use":
+                        # Tell the UI what tool is running
+                        yield f"data: {json.dumps({'type': 'tool_start', 'name': block.name})}\n\n"
+                        result = await _run_tool(block.name, block.input)
+                        yield f"data: {json.dumps({'type': 'tool_end', 'name': block.name})}\n\n"
+                        tool_results.append({...})
+
+                messages.append({"role": "assistant", "content": assistant_content})
+                messages.append({"role": "user", "content": tool_results})
+                continue  # loop — Claude sees results and keeps going
+
+            break  # end_turn — done
+
+        # Save messages + extract memories BEFORE signalling done
+        await save_message(planet_id, "user", body.message)
+        await save_message(planet_id, "assistant", full_reply)
+        await smart_extract_memories(body.message, full_reply, ...)
+
+        yield f"data: {json.dumps({'type': 'done', 'planet_id': body.planet_id})}\n\n"
+
+    return StreamingResponse(generate(), media_type="text/event-stream")
+```
+
+**Key call order:** memory extraction runs with `await` before the `done` event — not as a background task. Early versions used `asyncio.create_task()` which is fire-and-forget inside a generator, meaning the stream could close before extraction finished. Memories were silently dropped.
+
+---
+
+## 📸 Screenshot 2
+**What to capture:** A chat response actively streaming — text appearing mid-reply, or a tool activity indicator showing ("Searching the web…").
+**How:** Open a planet → type something that requires web search (e.g. "what happened in tech news today") → screenshot mid-response.
+
+---
+
+## The Memory System — `memory.py`
+
+The memory system is what separates this from a themed chat window.
+
+After every reply, a background call to `claude-haiku-4-5` extracts what's worth remembering. The extraction model gets a tight system prompt:
+
+```python
+_EXTRACTION_SYSTEM = """
+You are the memory and personality engine for Solar AI OS.
+
+Return ONLY valid JSON with this structure:
+{
+  "memories": [{
+    "key": "snake_case_identifier",
+    "value": "specific, rich description",
+    "type": "fact|preference|goal|person|pattern",
+    "importance": 0.7,
+    "global": true
+  }],
+  "profile": [{
+    "key": "communication_style",
+    "value": "terse, direct, no filler words",
+    "confidence": 0.8
+  }]
+}
+
+MEMORY TYPES:
+- fact:       Objective ("builds a startup called SolarAI", "based in London")
+- preference: What they like/dislike ("hates bullet lists", "wants direct answers")
+- goal:       Active goals ("wants to launch by Q2")
+- person:     People in their life ("Alex is his co-founder")
+- pattern:    Behavioral patterns ("messages late at night", "pivots quickly")
+
+"global": true = about them as a person across all projects.
+"global": false = specific to THIS project only.
+
+IMPORTANCE: 0.9+ = defining identity. 0.7-0.89 = high. 0.5-0.69 = medium. 0.3-0.49 = low.
+Max 4 memories per turn. Only save genuinely worth-remembering, long-term information.
+"""
+```
+
+Memories are stored with upsert semantics — consistent keys update existing memories instead of creating duplicates:
+
+```python
+async def upsert_memory(key, value, planet_id, memory_type, importance):
+    async with aiosqlite.connect(DB_PATH) as db:
+        existing = await db.execute(
+            "SELECT id FROM memories WHERE key = ? AND planet_id = ?",
+            (key, planet_id)
+        )
+        if existing:
+            await db.execute("""
+                UPDATE memories
+                SET value = ?, type = ?, importance = ?,
+                    last_accessed = datetime('now'),
+                    access_count = access_count + 1
+                WHERE id = ?
+            """, (value, memory_type, importance, existing[0]))
+        else:
+            await db.execute("""
+                INSERT INTO memories (id, planet_id, key, value, type, importance, ...)
+                VALUES (?, ?, ?, ?, ?, ?, datetime('now'), 0)
+            """, (uuid4(), planet_id, key, value, memory_type, importance))
+```
+
+The memory is injected into every system prompt as a structured context block:
+
+```python
+def build_context_block(planet_name, profile, categorized):
+    parts = []
+
+    if profile:
+        lines = [f"- **{label}:** {value}" for key, value in profile.items()]
+        parts.append("## Who you're talking to:\n" + "\n".join(lines))
+
+    for mem_type, label in TYPE_LABELS.items():
+        items = categorized.get(mem_type, [])[:10]  # cap at 10 per category
+        if items:
+            lines = [f"- {value}" for _, value in items]
+            parts.append(f"## {label}:\n" + "\n".join(lines))
+
+    return f"# Your knowledge of this person (project: {planet_name})\n\n" + "\n\n".join(parts)
+```
+
+---
+
+## 📸 Screenshot 3
+**What to capture:** The Memory tab in a planet panel — showing the user profile section and typed memory badges (fact, goal, preference, etc.).
+**How:** Open a planet → click the "Memory" tab → screenshot the full tab.
+
+---
+
+## The Shell Sandboxing — `skills/shell.py`
+
+Solar can run terminal commands on your behalf. With that power comes a security surface. The sandboxing has three layers:
+
+**Layer 1 — Blocklist.** A hardcoded set of commands that never run, ever.
+
+```python
+BLOCKED_COMMANDS: set[str] = {
+    "rm", "del", "format", "mkfs", "dd",         # destructive filesystem
+    "shutdown", "reboot", "halt",                  # OS control
+    "curl", "wget", "nc", "ncat", "netcat",        # no outbound network from shell
+    "sudo", "su", "chmod", "chown",               # privilege escalation
+    "reg", "regedit",                              # Windows registry
+    "cmd", "powershell", "pwsh",                  # shell interpreter spawning
+    "wscript", "cscript", "mshta",                # Windows script hosts
+    "certutil", "bitsadmin",                      # LOLBins
+    "regsvr32", "rundll32", "msiexec", "wmic",    # Windows exec primitives
+}
+```
+
+**Layer 2 — Never `shell=True`.** Always `asyncio.create_subprocess_exec(*args)` with a parsed argument list. No string interpolation into a shell. No injection surface.
+
+```python
+# Safe — args is a list from shlex.split(), no shell=True
+proc = await asyncio.create_subprocess_exec(
+    *args,
+    stdout=asyncio.subprocess.PIPE,
+    stderr=asyncio.subprocess.STDOUT,
+    cwd=cwd,
+)
+```
+
+**Layer 3 — Working directory confinement + 30s timeout.**
+
+```python
+_SAFE_ROOTS = [str(Path.home()), "C:/Users", "C:/tmp", "/tmp", "/home"]
+
+if not any(str(cwd_path).startswith(root) for root in _SAFE_ROOTS):
+    return {"blocked": True, "block_reason": "working_dir outside allowed roots"}
+
+stdout, _ = await asyncio.wait_for(proc.communicate(), timeout=30)
+```
+
+---
+
+## The CORS Bug That Broke the Packaged App
+
+This one was a significant time sink. Everything worked in dev. Nothing worked in the `.exe`.
+
+**Root cause:** Tauri v2 on Windows uses Chromium's **WebView2** engine. WebView2 sets the browser's `Origin` header to `http://tauri.localhost`. On macOS/Linux it's `tauri://localhost`. These are different strings. Our CORS allowlist only had the macOS version.
+
+Every POST request from the packaged Windows app was getting silently blocked by CORS preflight. GETs worked (no preflight). POSTs didn't. So the health check passed but every chat message failed.
+
+```python
+# main.py — CORS origins
+_ALLOWED_ORIGINS = [
+    "http://localhost:1420",       # Tauri dev server
+    "http://localhost:5173",       # Vite dev server
+    "http://localhost:8000",       # Same-origin (OAuth callback)
+    "tauri://localhost",           # Tauri production — macOS/Linux
+    "http://tauri.localhost",      # Tauri production — Windows WebView2
+    "https://tauri.localhost",     # Tauri production — Windows, secure context
+]
+```
+
+Four characters. Fixed it.
+
+---
+
+## The BASE_URL Bug
+
+Related issue. In dev, Vite proxies `/api/*` requests to `http://localhost:8000/*`, stripping the `/api` prefix. In the packaged app, there's no proxy. The bare URL is `http://localhost:8000`.
+
+Four places in the UI had hardcoded `/api/setup/api-key`, `/api/health`, etc. In the packaged app, these silently failed — meaning API keys entered during onboarding were never saved.
 
 ```typescript
-export const BASE_URL = import.meta.env.DEV ? "/api" : "http://localhost:8000";
+// api/agent.ts
+// Before: BASE_URL = "/api"  — only worked with Vite proxy
+// After:
+export const BASE_URL = import.meta.env.DEV
+  ? "/api"           // Vite proxy strips this and forwards to localhost:8000
+  : "http://localhost:8000";  // packaged app: direct to sidecar
 ```
-
-📸 *[Screenshot: Packaged app running — solar system visible, no errors]*
-
-### The Memory System
-
-This is what makes Solar different from a chat window with a space theme.
-
-**The problem with most AI memory:** It's a flat list of facts. "User likes coffee. User works at Acme Corp." That's a database, not understanding.
-
-**Our approach:** Typed memories with importance scores, extracted automatically after every conversation turn.
-
-Memory types:
-- `fact` — objective info ("based in London", "has a startup called SolarAI")
-- `preference` — what they like/dislike ("wants direct answers, no caveats")
-- `goal` — active goals ("wants to launch by Q2")
-- `person` — people in their life ("Alex is their co-founder")
-- `pattern` — behavioral patterns ("messages late at night", "pivots quickly")
-
-**Global vs. scoped:** Memories can be global (apply across all planets) or scoped to a specific planet. "User is a morning person" is global. "Prefers technical depth in the Work planet" is scoped.
-
-**Personality profile:** Separate from memories. Tracks communication style, energy level, how they think, what they value. Updated with confidence scores — high-confidence observations don't get overwritten by weak signals.
-
-**Extraction:** After every assistant reply, a background call to claude-haiku extracts what's worth remembering. Haiku is fast and cheap — perfect for this use case.
-
-📸 *[Screenshot: Memory tab showing user profile + typed memories with badges]*
-
-### Streaming Responses
-
-Early versions waited for the full response before displaying anything. For complex queries that trigger multiple tool calls, this meant 10-20 second blank screens.
-
-Switched to Server-Sent Events (SSE) streaming:
-1. Text tokens stream in real-time as Claude generates them
-2. Tool activity shows inline: "Searching the web…", "Reading your emails…"
-3. Memory extraction happens after the final token, before the stream closes
-4. `done` event signals the client to finalize the message
-
-📸 *[Screenshot: Chat with streaming text appearing, tool activity indicator visible]*
 
 ---
 
-## The Architecture Today
+## 📸 Screenshot 4
+**What to capture:** The Settings panel with Gmail connected (green checkmark).
+**How:** Open the app → click the settings icon (gear) → screenshot the Settings panel.
+
+---
+
+## The Gmail OAuth Flow — `skills/gmail.py`
+
+Full OAuth2 in-app. No token files to manage. The flow:
+
+1. UI calls `GET /gmail/auth` → server generates a `state` token (10-min TTL, single-use) → returns Google OAuth URL
+2. Tauri opens the URL in the system browser via `open::that()`
+3. User authorizes → Google redirects to `http://localhost:8000/gmail/callback`
+4. Server exchanges code for tokens → stores in Windows Credential Manager via `keyring`
+5. UI polls `GET /gmail/status` every 2s until connected
+
+State tokens are UUID4, stored in a dict with a timestamp. Validated on callback:
+
+```python
+_pending_states: dict[str, float] = {}  # state → timestamp
+
+@router.get("/auth")
+async def gmail_auth():
+    state = str(uuid.uuid4())
+    _pending_states[state] = time.time()
+    url = flow.authorization_url(state=state)[0]
+    return {"url": url}
+
+@router.get("/callback")
+async def gmail_callback(code: str, state: str):
+    ts = _pending_states.pop(state, None)
+    if ts is None or time.time() - ts > 600:  # 10 min TTL
+        raise HTTPException(400, "Invalid or expired state")
+    # exchange code for tokens, store in keychain...
+```
+
+---
+
+## 📸 Screenshot 5
+**What to capture:** The Onboarding screen — the first thing new users see.
+**How:** Open a private/incognito browser to `http://localhost:5173` in dev mode, OR clear `localStorage` in the app's DevTools and reload.
+**Alternative:** If you have a second machine or fresh install, screenshot that.
+
+---
+
+## 📸 Screenshot 6
+**What to capture:** A planet panel open with the Chat tab active — ideally mid-conversation with a few messages visible.
+**How:** Open a planet → have a short conversation → screenshot the chat panel.
+
+---
+
+## The PyInstaller Packaging — `solar_agent.spec`
+
+Getting the Python sidecar to bundle correctly was the hardest part of the project.
+
+`apscheduler` and `keyring` both use dynamic imports — they scan for installed backends at runtime using `importlib`. PyInstaller's static analysis can't see these. Without explicit `hiddenimports`, the bundled exe starts and immediately crashes with `ModuleNotFoundError`.
+
+The fix in `solar_agent.spec`:
+
+```python
+hiddenimports=[
+    # APScheduler job stores and executors
+    'apscheduler.schedulers.asyncio',
+    'apscheduler.schedulers.background',
+    'apscheduler.executors.pool',
+    'apscheduler.jobstores.memory',
+    # keyring backends — Windows Credential Manager
+    'keyring.backends',
+    'keyring.backends.Windows',
+    'keyring.backends.fail',
+    'keyring.backends.null',
+],
+```
+
+Also critical: the DB path. Relative paths work in dev but the packaged exe runs from `C:\Program Files\Solar AI OS\` which is read-only. Every DB write silently fails.
+
+```python
+# db/schema.py
+# Before: DB_PATH = "solar_ai.db"  — read-only in Program Files
+# After:
+DB_PATH = str(Path.home() / ".solar-ai" / "solar_ai.db")
+```
+
+Same fix for `briefing_schedule.json` and all other data files.
+
+---
+
+## Architecture: How It All Fits
 
 ```
-┌─────────────────────────────────┐
-│         Tauri v2 Shell          │  ← Rust, handles OS, windows, sidecar
-│  ┌───────────────────────────┐  │
-│  │    React + TypeScript UI  │  │  ← Solar system view, planet panels
-│  │    (http://tauri.localhost)│  │
-│  └────────────┬──────────────┘  │
-│               │ HTTP            │
-│  ┌────────────▼──────────────┐  │
-│  │  Python FastAPI Sidecar   │  │  ← All AI logic, tools, DB writes
-│  │  (http://localhost:8000)  │  │
-│  │  ┌────────┐ ┌──────────┐  │  │
-│  │  │ SQLite │ │ Claude   │  │  │
-│  │  │ ~home  │ │ API      │  │  │
-│  │  └────────┘ └──────────┘  │  │
-│  └───────────────────────────┘  │
-└─────────────────────────────────┘
+┌───────────────────────────────────────────────┐
+│               Tauri v2 Shell (Rust)            │
+│  ┌─────────────────────────────────────────┐  │
+│  │      React + TypeScript UI              │  │
+│  │      (http://tauri.localhost)           │  │
+│  │  - Solar system view (pure CSS)         │  │
+│  │  - Planet panels (slide in from right)  │  │
+│  │  - SSE stream reader (chat)             │  │
+│  └──────────────────┬──────────────────────┘  │
+│                     │ HTTP/SSE                 │
+│  ┌──────────────────▼──────────────────────┐  │
+│  │    Python FastAPI Sidecar               │  │
+│  │    (http://localhost:8000)              │  │
+│  │                                         │  │
+│  │  routes/chat.py  ← agentic tool loop   │  │
+│  │  memory/memory.py ← extract + store    │  │
+│  │  skills/gmail.py  ← OAuth + read       │  │
+│  │  skills/shell.py  ← sandboxed exec     │  │
+│  │  skills/web_search.py ← Brave/Tavily   │  │
+│  │                                         │  │
+│  │  ┌──────────┐  ┌───────────────────┐   │  │
+│  │  │ SQLite   │  │ Anthropic Claude  │   │  │
+│  │  │ ~/.solar │  │ sonnet + haiku    │   │  │
+│  │  └──────────┘  └───────────────────┘   │  │
+│  └─────────────────────────────────────────┘  │
+└───────────────────────────────────────────────┘
 ```
 
-**Data flow for a chat message:**
+**Data flow for a streaming chat message:**
 1. User types → React POSTs to `/chat/stream`
-2. FastAPI loads planet context + memories + user profile
-3. Claude generates response (streaming)
-4. Tool calls execute inline (Gmail, Calendar, web search, shell)
-5. Response streams back token by token via SSE
-6. Memory extraction runs in background
-7. Messages saved to SQLite
+2. FastAPI loads conversation history + user profile + typed memories
+3. `build_context_block()` assembles a structured system prompt with everything known about the user
+4. Claude generates response (streaming via SSE)
+5. Tool calls execute inline — Gmail, Calendar, web search, shell
+6. Text tokens stream to UI in real-time
+7. Tool activity events (`tool_start`/`tool_end`) show UI indicators
+8. Memory extraction runs (`await` — not fire-and-forget) before `done` event
+9. Messages saved to SQLite
+
+---
+
+## What We'd Do Differently
+
+1. **Absolute DB path from day 1.** Relative path works in dev, silently breaks in production. Always use `Path.home()`.
+2. **Test the packaged build, not just dev.** CORS bug and BASE_URL bug both only appeared in the `.exe`. Would have been caught immediately with a packaged test.
+3. **`await` background tasks, don't fire-and-forget.** `asyncio.create_task()` inside a streaming generator is unreliable — the generator can close before the task runs.
+4. **Include all Tauri WebView origins in CORS from the start.** macOS (`tauri://localhost`) and Windows (`http://tauri.localhost`) are different. Both needed.
 
 ---
 
 ## What's Next
 
-### Near-term (v0.2)
-- **Proactive Solar** — push notifications, pattern surfacing, daily briefings delivered to desktop
-- **Web version** — Next.js frontend + hosted Python backend (same agent, same memory, accessible anywhere)
-- **Abstract the API key** — hosted relay so users sign in with email instead of managing Anthropic keys
+**v0.2 — Proactive Solar**
+Solar pushes information to you instead of waiting to be asked. Daily briefings delivered as desktop notifications. Pattern surfacing: "You've mentioned being behind on X three times this week." Scheduled tasks that actually run.
 
-### Medium-term (v0.3)
-- **Planet substance** — each planet type has specialized tools and context (Finance planet has budget tracking, Health planet has habit logging)
-- **macOS + Linux builds** — currently Windows only
-- **Notion/Obsidian integration** — read your notes, surface relevant context
+**v0.3 — Web Version**
+Same agent, same memory system, accessible from any browser. Next.js frontend + hosted Python backend. Supabase for multi-device sync.
 
-### Long-term vision
-- Multi-device sync (Supabase backend option)
-- iPhone companion app
-- Code signing for enterprise distribution
-- Plugin ecosystem — third-party planet types
+**v0.4 — iPhone App**
+Your solar system in your pocket. React Native or Swift. Real-time sync with desktop.
+
+**Long-term — Abstract the API key**
+Host a relay server. Users sign in with email. We handle the Anthropic API costs. No key management, no friction, no barrier to entry.
 
 ---
 
-## Decisions We're Proud Of
+## v0.1.1 — The "It Actually Works" Update
 
-1. **Solar system metaphor as product philosophy, not decoration** — the spatial organization of your life into orbiting domains is genuinely novel
-2. **Local-first by default** — your data doesn't leave your machine. Full stop.
-3. **Typed memory with importance scores** — not a flat list of facts, but a weighted model of who you are
-4. **Haiku for background extraction** — cheap, fast, right-sized for the task
-5. **CSS display:none for tab switching** — keeps React state alive without re-mounting the chat component
-6. **taskkill before sidecar spawn** — eliminates the ghost process problem on Windows without ceremony
+Released shortly after v0.1.0 when we discovered that Gmail and Calendar were silently failing in production. Three bugs, one root cause: the Google API client library.
 
-## Decisions We'd Make Differently
+### The httplib2 Timeout Problem
 
-1. **Relative DB path** — should have been absolute from day one
-2. **Hardcoded `/api/` prefix** — should have used env-aware BASE_URL from the start
-3. **asyncio.create_task for memory extraction** — fire-and-forget in a streaming generator is unreliable; should have been awaited from the start
-4. **CORS allowlist** — should have included all Tauri origin variants before first packaged build
+`google-api-python-client` uses `httplib2` under the hood. `httplib2` has no default socket timeout. On Windows with Python 3.14, fetching 15 emails in parallel via `asyncio.to_thread` would deadlock on SSL reads:
+
+```
+TimeoutError: The read operation timed out
+  File "httplib2/__init__.py", line 1399, in _conn_request
+    response = conn.getresponse()
+  File "ssl.py", line 1138, in read
+    return self._sslobj.read(len, buffer)
+```
+
+The agent (Solar) would catch this, pass it to Claude as a tool error, and Claude would hallucinate an explanation about "SSL config issues" — because it had no idea what the real error was. That's what the user saw.
+
+### The Fix: Replace the Entire Stack
+
+Instead of patching `httplib2`, we removed it. Rewrote both `skills/gmail.py` and `skills/calendar.py` to use `httpx` directly — the same async HTTP client already in the project.
+
+```python
+# Before: blocking httplib2 via asyncio.to_thread
+service = await get_service()  # builds google-api-python-client
+result = await asyncio.to_thread(
+    lambda: service.users().messages().list(...).execute()
+)
+
+# After: pure async httpx
+async with httpx.AsyncClient(timeout=20, headers=auth_headers) as client:
+    resp = await client.get(f"{GMAIL_API}/users/me/messages", params=...)
+    resp.raise_for_status()
+```
+
+Result: no threads, explicit 20s timeout, proper async throughout, ~3x faster.
+
+### Token Refresh Bug
+
+The OAuth callback was storing `expiry: None` for all tokens. The `google-auth` library checks `creds.expired` — which is always False when expiry is not set. So expired access tokens were never refreshed.
+
+Fix: calculate and store the real expiry from `expires_in` in the token response:
+
+```python
+_expires_in = int(token_data.get("expires_in", 3600))
+_expiry_iso = (
+    datetime.now(timezone.utc) + timedelta(seconds=_expires_in)
+).isoformat()
+```
+
+Now the refresh check compares current time against stored expiry, refreshing 5 minutes before actual expiry.
+
+### Google Calendar API Not Enabled
+
+The Calendar skill was getting `403 Forbidden`. Root cause: the Google Calendar API wasn't enabled in the Google Cloud project. The Gmail API and Calendar API are separate — you enable them individually in the API Library. One-click fix in the console.
+
+### Tauri OAuth Popup Fix
+
+`window.open()` in Tauri's WebView2 does nothing for external URLs — silently blocked. Fixed by using `openUrl()` from `@tauri-apps/plugin-opener`:
+
+```typescript
+import { openUrl } from "@tauri-apps/plugin-opener";
+
+async function openOAuthUrl(url: string) {
+  try {
+    await openUrl(url);  // opens system browser
+  } catch {
+    window.open(url, "_blank", "width=500,height=620");  // fallback
+  }
+}
+```
 
 ---
 
-*Documentation updated: March 2026*
-*Build started: Early 2026*
-*Current version: v0.1.0*
+*Version: 0.1.0 · Build started: Early 2026 · Platform: Windows*

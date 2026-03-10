@@ -3,7 +3,7 @@
 from typing import Any
 
 import aiosqlite
-from fastapi import APIRouter
+from fastapi import APIRouter, Query
 
 from db.schema import DB_PATH
 
@@ -11,7 +11,7 @@ router = APIRouter(prefix="/logs", tags=["logs"])
 
 
 @router.get("")
-async def list_logs(limit: int = 50) -> list[dict[str, Any]]:
+async def list_logs(limit: int = Query(50, ge=1, le=200)) -> list[dict[str, Any]]:
     async with aiosqlite.connect(DB_PATH) as db:
         db.row_factory = aiosqlite.Row
         async with db.execute(

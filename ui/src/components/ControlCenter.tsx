@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { api, type Planet, type LogEntry, type Memory } from "../api/agent";
 
 interface Props {
@@ -221,12 +221,101 @@ function SolarIntelligencePanel({ memories }: { memories: Memory[] | null }) {
   );
 }
 
+// Live clock
+function useClock() {
+  const [time, setTime] = useState(() => new Date());
+  useEffect(() => {
+    const t = setInterval(() => setTime(new Date()), 1000);
+    return () => clearInterval(t);
+  }, []);
+  return time;
+}
+
+// Mini orbit radar canvas
+function OrbitRadar({ planets }: { planets: Planet[] }) {
+  const canvasRef = useRef<HTMLCanvasElement>(null);
+  const frameRef  = useRef<number>(0);
+  const anglesRef = useRef<number[]>(planets.map((_, i) => i * 1.3));
+
+  useEffect(() => {
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+    const ctx = canvas.getContext("2d");
+    if (!ctx) return;
+    const W = canvas.width, H = canvas.height;
+    const cx = W / 2, cy = H / 2;
+    const maxR = Math.min(cx, cy) - 8;
+    const colors = ["#29b6f6","#f0b050","#e64a19","#80d8ff","#ff4500","#00bcd4","#a78bfa","#00ff41"];
+
+    const draw = () => {
+      ctx.clearRect(0, 0, W, H);
+      // Grid rings
+      for (let r = maxR * 0.25; r <= maxR; r += maxR * 0.25) {
+        ctx.beginPath();
+        ctx.arc(cx, cy, r, 0, Math.PI * 2);
+        ctx.strokeStyle = "rgba(0,255,65,0.07)";
+        ctx.lineWidth = 1;
+        ctx.stroke();
+      }
+      // Cross-hairs
+      ctx.strokeStyle = "rgba(0,255,65,0.05)";
+      ctx.lineWidth = 1;
+      ctx.beginPath(); ctx.moveTo(cx, 0); ctx.lineTo(cx, H); ctx.stroke();
+      ctx.beginPath(); ctx.moveTo(0, cy); ctx.lineTo(W, cy); ctx.stroke();
+
+      // Sun
+      const sunGrad = ctx.createRadialGradient(cx, cy, 0, cx, cy, 6);
+      sunGrad.addColorStop(0, "#fffbe0");
+      sunGrad.addColorStop(1, "rgba(245,158,11,0)");
+      ctx.beginPath(); ctx.arc(cx, cy, 6, 0, Math.PI * 2);
+      ctx.fillStyle = "#f59e0b"; ctx.fill();
+      ctx.beginPath(); ctx.arc(cx, cy, 11, 0, Math.PI * 2);
+      ctx.fillStyle = sunGrad; ctx.fill();
+
+      // Planets orbiting
+      planets.forEach((_, i) => {
+        const orbitR = maxR * (0.18 + i * (0.72 / Math.max(planets.length, 1)));
+        const speed  = 0.004 + i * 0.0015;
+        anglesRef.current[i] = (anglesRef.current[i] ?? 0) + speed;
+        const a = anglesRef.current[i];
+        const px = cx + orbitR * Math.cos(a);
+        const py = cy + orbitR * Math.sin(a) * 0.55; // tilt
+        const col = colors[i % colors.length];
+
+        // Orbit track
+        ctx.beginPath();
+        ctx.ellipse(cx, cy, orbitR, orbitR * 0.55, 0, 0, Math.PI * 2);
+        ctx.strokeStyle = "rgba(0,255,65,0.09)";
+        ctx.lineWidth = 0.8;
+        ctx.stroke();
+
+        // Planet dot
+        ctx.beginPath(); ctx.arc(px, py, 3.5, 0, Math.PI * 2);
+        ctx.fillStyle = col; ctx.fill();
+        // Glow
+        const g = ctx.createRadialGradient(px, py, 0, px, py, 9);
+        g.addColorStop(0, col + "66");
+        g.addColorStop(1, col + "00");
+        ctx.beginPath(); ctx.arc(px, py, 9, 0, Math.PI * 2);
+        ctx.fillStyle = g; ctx.fill();
+      });
+
+      frameRef.current = requestAnimationFrame(draw);
+    };
+    draw();
+    return () => cancelAnimationFrame(frameRef.current);
+  }, [planets]);
+
+  return <canvas ref={canvasRef} width={200} height={200} style={{ display: "block", opacity: 0.9 }} />;
+}
+
 export function ControlCenter({ onClose }: Props) {
   const [planets, setPlanets] = useState<Planet[] | null>(null);
   const [logs, setLogs] = useState<LogEntry[] | null>(null);
   const [memories, setMemories] = useState<Memory[] | null>(null);
   const [planetsError, setPlanetsError] = useState<string | null>(null);
   const [planetsLoading, setPlanetsLoading] = useState(true);
+  const clock = useClock();
 
   useEffect(() => {
     api.getPlanets()
@@ -338,15 +427,17 @@ export function ControlCenter({ onClose }: Props) {
                   }}
                 />
               </div>
-              <div
-                style={{
-                  fontSize: "11px",
-                  color: AMBER,
-                  letterSpacing: "0.18em",
-                  marginTop: "4px",
-                }}
-              >
-                // HOUSTON WE ARE GO FOR LAUNCH
+              <div style={{ display: "flex", gap: "24px", marginTop: "6px", alignItems: "center" }}>
+                <div style={{ fontSize: "11px", color: AMBER, letterSpacing: "0.18em" }}>
+                  // HOUSTON WE ARE GO FOR LAUNCH
+                </div>
+                <div style={{ fontSize: "11px", color: `${GREEN}cc`, letterSpacing: "0.14em", fontVariantNumeric: "tabular-nums" }}>
+                  {clock.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", second: "2-digit" })}
+                  &nbsp;UTC+{new Date().getTimezoneOffset() / -60 >= 0 ? "+" : ""}{new Date().getTimezoneOffset() / -60}
+                </div>
+                <div style={{ fontSize: "10px", color: `${GREEN}66`, letterSpacing: "0.12em" }}>
+                  {planets !== null ? `${planets.length} ACTIVE ORBIT${planets.length !== 1 ? "S" : ""}` : "SCANNING..."}
+                </div>
               </div>
             </div>
 
@@ -379,18 +470,38 @@ export function ControlCenter({ onClose }: Props) {
             </button>
           </div>
 
-          {/* ── 2×2 Grid ───────────────────────────────── */}
+          {/* ── Main grid ─────────────────────────────── */}
           <div
             style={{
               flex: 1,
               display: "grid",
-              gridTemplateColumns: "1fr 1fr",
+              gridTemplateColumns: "220px 1fr 1fr",
               gridTemplateRows: "1fr 1fr",
               gap: "12px",
               padding: "16px 28px",
               overflow: "hidden",
             }}
           >
+            {/* Orbit radar — spans both rows */}
+            <div style={{ ...hudPanelStyle, gridRow: "1 / 3", alignItems: "center", justifyContent: "space-between" }}>
+              <Corner pos="tl" /><Corner pos="tr" /><Corner pos="bl" /><Corner pos="br" />
+              <PanelLabel label="ORBITAL RADAR" />
+              <div style={{ display: "flex", justifyContent: "center", flex: 1, alignItems: "center" }}>
+                <OrbitRadar planets={planets ?? []} />
+              </div>
+              <div style={{ display: "flex", flexDirection: "column", gap: "4px", width: "100%", marginTop: "8px" }}>
+                {(planets ?? []).map((p, i) => (
+                  <div key={p.id} style={{ display: "flex", alignItems: "center", gap: "6px" }}>
+                    <span style={{ width: "6px", height: "6px", borderRadius: "50%", background: p.color, flexShrink: 0, boxShadow: `0 0 4px ${p.color}` }} />
+                    <span style={{ color: `${GREEN}99`, fontSize: "9px", letterSpacing: "0.1em", flex: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                      {p.name.toUpperCase()}
+                    </span>
+                    <span style={{ color: `${GREEN}55`, fontSize: "8px" }}>ORB-{String(i + 1).padStart(2, "0")}</span>
+                  </div>
+                ))}
+              </div>
+            </div>
+
             <ActiveMissionsPanel
               planets={planets}
               loading={planetsLoading}

@@ -1,11 +1,11 @@
 """Task management routes for Solar AI OS."""
 
 import uuid
-from typing import Any
+from typing import Any, Literal
 
 import aiosqlite
 from fastapi import APIRouter, HTTPException
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 from db.schema import DB_PATH
 
@@ -13,16 +13,16 @@ router = APIRouter(prefix="/tasks", tags=["tasks"])
 
 
 class TaskCreate(BaseModel):
-    title: str
-    description: str | None = None
-    priority: str = "medium"
+    title: str = Field(..., min_length=1, max_length=500)
+    description: str | None = Field(None, max_length=5000)
+    priority: Literal["low", "medium", "high"] = "medium"
 
 
 class TaskPatch(BaseModel):
-    status: str | None = None
-    title: str | None = None
-    description: str | None = None
-    priority: str | None = None
+    status: Literal["todo", "doing", "done"] | None = None
+    title: str | None = Field(None, min_length=1, max_length=500)
+    description: str | None = Field(None, max_length=5000)
+    priority: Literal["low", "medium", "high"] | None = None
 
 
 @router.get("/{planet_id}", response_model=list[dict[str, Any]])

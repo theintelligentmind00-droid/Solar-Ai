@@ -1,28 +1,45 @@
 """CRUD endpoints for planets (projects)."""
 
+import re
 import uuid
 from typing import Any
 
 import aiosqlite
 from fastapi import APIRouter, HTTPException
-from pydantic import BaseModel
+from pydantic import BaseModel, Field, field_validator
 
 from db.schema import DB_PATH
 
 router = APIRouter(prefix="/planets", tags=["planets"])
 
+_HEX_COLOR = re.compile(r"^#[0-9a-fA-F]{6}$")
+
 
 class PlanetCreate(BaseModel):
-    name: str
-    orbit_radius: float = 200.0
+    name: str = Field(..., min_length=1, max_length=100)
+    orbit_radius: float = Field(200.0, ge=50.0, le=2000.0)
     color: str = "#FFD700"
+
+    @field_validator("color")
+    @classmethod
+    def validate_color(cls, v: str) -> str:
+        if not _HEX_COLOR.match(v):
+            raise ValueError("color must be a 6-digit hex color (e.g. #FFD700)")
+        return v
 
 
 class PlanetUpdate(BaseModel):
-    name: str | None = None
+    name: str | None = Field(None, min_length=1, max_length=100)
     status: str | None = None
-    orbit_radius: float | None = None
+    orbit_radius: float | None = Field(None, ge=50.0, le=2000.0)
     color: str | None = None
+
+    @field_validator("color")
+    @classmethod
+    def validate_color(cls, v: str | None) -> str | None:
+        if v is not None and not _HEX_COLOR.match(v):
+            raise ValueError("color must be a 6-digit hex color (e.g. #FFD700)")
+        return v
 
 
 @router.get("")
