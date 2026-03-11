@@ -14,17 +14,18 @@ async def load_context(
     planet_id: str,
     limit: int = 20,
     db_path: str = DB_PATH,
+    user_id: str = "local",
 ) -> list[dict[str, Any]]:
     """Load the last `limit` messages for a planet, formatted for the Claude API."""
     async with aiosqlite.connect(db_path) as db:
         async with db.execute(
             """
             SELECT role, content FROM messages
-            WHERE planet_id = ?
+            WHERE planet_id = ? AND user_id = ?
             ORDER BY rowid DESC
             LIMIT ?
             """,
-            (planet_id, limit),
+            (planet_id, user_id, limit),
         ) as cursor:
             rows = await cursor.fetchall()
 
@@ -36,12 +37,13 @@ async def save_message(
     role: str,
     content: str,
     db_path: str = DB_PATH,
+    user_id: str = "local",
 ) -> None:
     """Persist a single message to the messages table."""
     async with aiosqlite.connect(db_path) as db:
         await db.execute(
-            "INSERT INTO messages (id, planet_id, role, content) VALUES (?, ?, ?, ?)",
-            (str(uuid.uuid4()), planet_id, role, content),
+            "INSERT INTO messages (id, planet_id, role, content, user_id) VALUES (?, ?, ?, ?, ?)",
+            (str(uuid.uuid4()), planet_id, role, content, user_id),
         )
         await db.commit()
 
@@ -53,19 +55,20 @@ async def upsert_memory(
     memory_type: str = "fact",
     importance: float = 0.5,
     db_path: str = DB_PATH,
+    user_id: str = "local",
 ) -> None:
     """Insert or update a memory by key+planet_id scope. Updates value and importance on conflict."""
     async with aiosqlite.connect(db_path) as db:
         if planet_id is not None:
             async with db.execute(
-                "SELECT id FROM memories WHERE key = ? AND planet_id = ?",
-                (key, planet_id),
+                "SELECT id FROM memories WHERE key = ? AND planet_id = ? AND user_id = ?",
+                (key, planet_id, user_id),
             ) as cursor:
                 existing = await cursor.fetchone()
         else:
             async with db.execute(
-                "SELECT id FROM memories WHERE key = ? AND planet_id IS NULL",
-                (key,),
+                "SELECT id FROM memories WHERE key = ? AND planet_id IS NULL AND user_id = ?",
+                (key, user_id),
             ) as cursor:
                 existing = await cursor.fetchone()
 
@@ -81,9 +84,9 @@ async def upsert_memory(
         else:
             await db.execute(
                 """INSERT INTO memories
-                   (id, planet_id, key, value, type, importance, last_accessed, access_count)
-                   VALUES (?, ?, ?, ?, ?, ?, datetime('now'), 0)""",
-                (str(uuid.uuid4()), planet_id, key, value, memory_type, importance),
+                   (id, planet_id, key, value, type, importance, last_accessed, access_count, user_id)
+                   VALUES (?, ?, ?, ?, ?, ?, datetime('now'), 0, ?)""",
+                (str(uuid.uuid4()), planet_id, key, value, memory_type, importance, user_id),
             )
         await db.commit()
 
@@ -103,16 +106,16 @@ async def upsert_profile(
     value: str,
     confidence: float = 0.5,
     db_path: str = DB_PATH,
+    user_id: str = "local",
 ) -> None:
     """Insert or update a user personality/profile observation."""
     async with aiosqlite.connect(db_path) as db:
         async with db.execute(
-            "SELECT id, confidence FROM user_profile WHERE key = ?", (key,)
+            "SELECT id, confidence FROM user_profile WHERE key = ? AND user_id = ?", (key, user_id)
         ) as cursor:
             existing = await cursor.fetchone()
 
         if existing:
-            # Only update if new confidence is equal or higher (don't overwrite strong signal with weak)
             if confidence >= existing[1]:
                 await db.execute(
                     "UPDATE user_profile SET value = ?, confidence = ?, updated_at = datetime('now') WHERE id = ?",
@@ -120,17 +123,18 @@ async def upsert_profile(
                 )
         else:
             await db.execute(
-                "INSERT INTO user_profile (id, key, value, confidence) VALUES (?, ?, ?, ?)",
-                (str(uuid.uuid4()), key, value, confidence),
+                "INSERT INTO user_profile (id, key, value, confidence, user_id) VALUES (?, ?, ?, ?, ?)",
+                (str(uuid.uuid4()), key, value, confidence, user_id),
             )
         await db.commit()
 
 
-async def load_user_profile(db_path: str = DB_PATH) -> dict[str, str]:
+async def load_user_profile(db_path: str = DB_PATH, user_id: str = "local") -> dict[str, str]:
     """Return the user profile as a key→value dict, highest confidence first."""
     async with aiosqlite.connect(db_path) as db:
         async with db.execute(
-            "SELECT key, value FROM user_profile ORDER BY confidence DESC, updated_at DESC",
+            "SELECT key, value FROM user_profile WHERE user_id = ? ORDER BY confidence DESC, updated_at DESC",
+            (user_id,),
         ) as cursor:
             rows = await cursor.fetchall()
     return {row[0]: row[1] for row in rows}
@@ -139,6 +143,7 @@ async def load_user_profile(db_path: str = DB_PATH) -> dict[str, str]:
 async def load_memories_categorized(
     planet_id: str,
     db_path: str = DB_PATH,
+    user_id: str = "local",
 ) -> dict[str, list[tuple[str, str]]]:
     """Return memories grouped by type, sorted by importance desc.
 
@@ -150,10 +155,10 @@ async def load_memories_categorized(
             """
             SELECT key, value, COALESCE(type, 'fact') as type
             FROM memories
-            WHERE planet_id = ? OR planet_id IS NULL
+            WHERE (planet_id = ? OR planet_id IS NULL) AND user_id = ?
             ORDER BY COALESCE(importance, 0.5) DESC, created_at DESC
             """,
-            (planet_id,),
+            (planet_id, user_id),
         ) as cursor:
             rows = await cursor.fetchall()
 
@@ -295,6 +300,7 @@ async def smart_extract_memories(
     planet_name: str,
     api_key: str,
     db_path: str = DB_PATH,
+    user_id: str = "local",
 ) -> list[str]:
     """Extract typed memories and personality profile from a conversation turn.
 
@@ -346,6 +352,7 @@ async def smart_extract_memories(
                 memory_type=mem_type,
                 importance=max(0.0, min(1.0, importance)),
                 db_path=db_path,
+                user_id=user_id,
             )
             saved_keys.append(key)
 
@@ -362,6 +369,7 @@ async def smart_extract_memories(
                 value=value,
                 confidence=max(0.0, min(1.0, confidence)),
                 db_path=db_path,
+                user_id=user_id,
             )
 
         return saved_keys

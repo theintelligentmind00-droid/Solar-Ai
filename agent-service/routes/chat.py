@@ -3,13 +3,14 @@
 import asyncio
 import json
 import logging
+import os
 from typing import Any
 
 logger = logging.getLogger(__name__)
 
 import aiosqlite
 import anthropic
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, Request
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
 
@@ -284,9 +285,25 @@ _TOOLS: list[dict[str, Any]] = [
     },
 ]
 
+# Tools disabled in web mode (dangerous for hosted deployments).
+_WEB_MODE_BLOCKED_TOOLS: set[str] = {"run_shell_command", "read_file"}
+
+_WEB_MODE: bool = os.getenv("WEB_MODE", "false").lower() == "true"
+
+
+def _get_tools() -> list[dict[str, Any]]:
+    """Return the tool list, filtering out dangerous tools in web mode."""
+    if _WEB_MODE:
+        return [t for t in _TOOLS if t["name"] not in _WEB_MODE_BLOCKED_TOOLS]
+    return _TOOLS
+
 
 async def _run_tool(name: str, tool_input: dict[str, Any]) -> str:
     """Execute a tool by name and return a string result."""
+
+    # Block dangerous tools in web mode even if called directly.
+    if _WEB_MODE and name in _WEB_MODE_BLOCKED_TOOLS:
+        return f"Tool '{name}' is disabled in web mode."
 
     # ── Gmail ─────────────────────────────────────────────────────────────────
     if name == "get_gmail_summary":
@@ -428,9 +445,10 @@ async def _run_tool(name: str, tool_input: dict[str, Any]) -> str:
 
 
 @router.get("/history/{planet_id}")
-async def get_chat_history(planet_id: str, limit: int = 50) -> list[dict[str, str]]:
+async def get_chat_history(planet_id: str, request: Request, limit: int = 50) -> list[dict[str, str]]:
     """Return the last `limit` messages for a planet in chronological order."""
-    return await load_context(planet_id, limit=limit, db_path=DB_PATH)
+    uid = request.state.user_id
+    return await load_context(planet_id, limit=limit, db_path=DB_PATH, user_id=uid)
 
 
 class ChatRequest(BaseModel):
@@ -451,26 +469,32 @@ async def _get_planet_name(planet_id: str, db_path: str = DB_PATH) -> str:
 
 
 @router.post("")
-async def chat(body: ChatRequest) -> dict[str, Any]:
-    api_key = config.get_api_key()
+async def chat(body: ChatRequest, request: Request) -> dict[str, Any]:
+    # In web mode, use the per-user API key from the request
+    api_key = getattr(request.state, "api_key", None) or config.get_api_key()
     if not api_key:
         raise HTTPException(
             status_code=400,
             detail="API key not configured. Please add your Anthropic API key in Settings.",
         )
+    uid = request.state.user_id
 
     planet_name = await _get_planet_name(body.planet_id)
 
-    context = await load_context(body.planet_id, limit=20, db_path=DB_PATH)
-    profile = await load_user_profile(db_path=DB_PATH)
-    categorized = await load_memories_categorized(body.planet_id, db_path=DB_PATH)
+    context = await load_context(body.planet_id, limit=20, db_path=DB_PATH, user_id=uid)
+    profile = await load_user_profile(db_path=DB_PATH, user_id=uid)
+    categorized = await load_memories_categorized(body.planet_id, db_path=DB_PATH, user_id=uid)
     context_block = build_context_block(planet_name, profile, categorized)
 
     system_prompt = f"{BASE_SYSTEM_PROMPT}\n\nCurrent project: {planet_name}"
     if context_block:
         system_prompt += f"\n\n{context_block}"
 
-    client = _get_client()
+    # Use per-user client in web mode, shared client in desktop mode
+    if request.state.api_key:
+        client = anthropic.AsyncAnthropic(api_key=api_key)
+    else:
+        client = _get_client()
     messages: list[dict[str, Any]] = context + [{"role": "user", "content": body.message}]
 
     # Agentic loop: let Claude call tools until it produces a final text reply
@@ -481,7 +505,7 @@ async def chat(body: ChatRequest) -> dict[str, Any]:
             model="claude-sonnet-4-6",
             max_tokens=1024,
             system=system_prompt,
-            tools=_TOOLS,
+            tools=_get_tools(),
             messages=messages,
         )
 
@@ -521,19 +545,19 @@ async def chat(body: ChatRequest) -> dict[str, Any]:
     if not reply:
         reply = "Something went wrong generating a response."
 
-    await save_message(body.planet_id, "user", body.message, db_path=DB_PATH)
-    await save_message(body.planet_id, "assistant", reply, db_path=DB_PATH)
+    await save_message(body.planet_id, "user", body.message, db_path=DB_PATH, user_id=uid)
+    await save_message(body.planet_id, "assistant", reply, db_path=DB_PATH, user_id=uid)
 
     if body.planet_id != "sun":
         async with aiosqlite.connect(DB_PATH) as db:
             await db.execute(
-                "UPDATE planets SET last_activity_at = datetime('now') WHERE id = ?",
-                (body.planet_id,)
+                "UPDATE planets SET last_activity_at = datetime('now') WHERE id = ? AND user_id = ?",
+                (body.planet_id, uid),
             )
             await db.commit()
 
     await smart_extract_memories(
-        body.message, reply, body.planet_id, planet_name, api_key, db_path=DB_PATH
+        body.message, reply, body.planet_id, planet_name, api_key, db_path=DB_PATH, user_id=uid
     )
 
     if response is not None:
@@ -550,28 +574,30 @@ async def chat(body: ChatRequest) -> dict[str, Any]:
 
 
 @router.post("/stream")
-async def chat_stream(body: ChatRequest) -> StreamingResponse:
+async def chat_stream(body: ChatRequest, request: Request) -> StreamingResponse:
     """Stream a chat response using Server-Sent Events."""
+    _uid = request.state.user_id
+    _user_api_key = getattr(request.state, "api_key", None)
 
     async def generate() -> Any:  # type: ignore[return]
         try:
-            api_key = config.get_api_key()
+            api_key = _user_api_key or config.get_api_key()
             if not api_key:
                 yield f"data: {json.dumps({'type': 'error', 'message': 'API key not configured. Please add your Anthropic API key in Settings.'})}\n\n"
                 return
 
             planet_name = await _get_planet_name(body.planet_id)
 
-            context = await load_context(body.planet_id, limit=20, db_path=DB_PATH)
-            profile = await load_user_profile(db_path=DB_PATH)
-            categorized = await load_memories_categorized(body.planet_id, db_path=DB_PATH)
+            context = await load_context(body.planet_id, limit=20, db_path=DB_PATH, user_id=_uid)
+            profile = await load_user_profile(db_path=DB_PATH, user_id=_uid)
+            categorized = await load_memories_categorized(body.planet_id, db_path=DB_PATH, user_id=_uid)
             context_block = build_context_block(planet_name, profile, categorized)
 
             system_prompt = f"{BASE_SYSTEM_PROMPT}\n\nCurrent project: {planet_name}"
             if context_block:
                 system_prompt += f"\n\n{context_block}"
 
-            client = _get_client()
+            client = anthropic.AsyncAnthropic(api_key=api_key) if _user_api_key else _get_client()
             messages: list[dict[str, Any]] = context + [{"role": "user", "content": body.message}]
 
             full_reply = ""
@@ -582,7 +608,7 @@ async def chat_stream(body: ChatRequest) -> StreamingResponse:
                     model="claude-sonnet-4-6",
                     max_tokens=1024,
                     system=system_prompt,
-                    tools=_TOOLS,
+                    tools=_get_tools(),
                     messages=messages,
                 ) as stream:
                     round_text = ""
@@ -628,19 +654,19 @@ async def chat_stream(body: ChatRequest) -> StreamingResponse:
                 full_reply = "Something went wrong generating a response."
 
             # Save messages and extract memories before signalling done
-            await save_message(body.planet_id, "user", body.message, db_path=DB_PATH)
-            await save_message(body.planet_id, "assistant", full_reply, db_path=DB_PATH)
+            await save_message(body.planet_id, "user", body.message, db_path=DB_PATH, user_id=_uid)
+            await save_message(body.planet_id, "assistant", full_reply, db_path=DB_PATH, user_id=_uid)
 
             if body.planet_id != "sun":
                 async with aiosqlite.connect(DB_PATH) as db:
                     await db.execute(
-                        "UPDATE planets SET last_activity_at = datetime('now') WHERE id = ?",
-                        (body.planet_id,)
+                        "UPDATE planets SET last_activity_at = datetime('now') WHERE id = ? AND user_id = ?",
+                        (body.planet_id, _uid),
                     )
                     await db.commit()
 
             await smart_extract_memories(
-                body.message, full_reply, body.planet_id, planet_name, api_key, db_path=DB_PATH
+                body.message, full_reply, body.planet_id, planet_name, api_key, db_path=DB_PATH, user_id=_uid
             )
 
             yield f"data: {json.dumps({'type': 'done', 'planet_id': body.planet_id})}\n\n"
