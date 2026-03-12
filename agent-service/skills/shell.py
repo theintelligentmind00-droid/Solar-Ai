@@ -4,25 +4,56 @@ from __future__ import annotations
 
 import asyncio
 import os
+import re
 import shlex
 from pathlib import Path
 
 # Commands that are always blocked (security)
 BLOCKED_COMMANDS: set[str] = {
-    "rm", "del", "format", "mkfs", "dd", "shutdown", "reboot", "halt",
-    "curl", "wget", "nc", "ncat", "netcat",  # no outbound network from shell
-    "sudo", "su", "chmod", "chown",
-    "reg", "regedit",  # Windows registry
-    "cmd", "powershell", "pwsh",  # shell interpreters
-    "wscript", "cscript", "mshta",  # Windows script hosts
-    "certutil", "bitsadmin",  # common LOLBins
-    "regsvr32", "rundll32", "msiexec", "wmic",  # Windows exec/install primitives
+    # Destructive
+    "rm", "rmdir", "del", "erase", "format", "mkfs", "dd",
+    "shutdown", "reboot", "halt", "init",
+    # Network (no outbound from shell)
+    "curl", "wget", "nc", "ncat", "netcat", "ssh", "scp", "sftp", "ftp",
+    "telnet", "nmap", "dig", "nslookup",
+    # Privilege escalation
+    "sudo", "su", "doas", "runas",
+    # Permission changes
+    "chmod", "chown", "chgrp", "icacls", "cacls", "takeown",
+    # Shell interpreters (bypass vector — can run any blocked cmd inside)
+    "cmd", "powershell", "pwsh", "bash", "sh", "zsh", "fish",
+    "csh", "tcsh", "ksh", "dash",
+    # Script interpreters (can execute arbitrary code)
+    "python", "python3", "python3.11", "python3.12", "python3.13",
+    "node", "bun", "deno", "ruby", "perl", "php", "lua",
+    "java", "javac",
+    # Windows registry
+    "reg", "regedit",
+    # Windows script hosts
+    "wscript", "cscript", "mshta",
+    # Windows LOLBins (common living-off-the-land binaries)
+    "certutil", "bitsadmin", "regsvr32", "rundll32", "msiexec",
+    "wmic", "forfiles", "pcalua", "cmstp", "infdefaultinstall",
+    "msbuild", "installutil",
+    # Package managers (could install malicious packages)
+    "pip", "pip3", "npm", "npx", "yarn", "pnpm", "gem", "cargo",
+    # Environment manipulation
+    "env", "export", "setx", "set",
+    # Disk/mount
+    "mount", "umount", "fdisk", "parted", "diskpart",
+    # Process control
+    "kill", "killall", "pkill", "taskkill",
 }
+
+# Dangerous characters that could indicate shell injection
+_DANGEROUS_CHARS = re.compile(r'[|;&`$]|>\s|<\s|>>|<<|\$\(|`')
 
 _SAFE_ROOTS: list[str] = [
     str(Path.home()),
     "C:/Users",
+    "C:\\Users",
     "C:/tmp",
+    "C:\\tmp",
     "/tmp",
     "/home",
 ]
@@ -44,16 +75,17 @@ async def run_command(
             "blocked": bool,
             "block_reason": str | None,
         }
-
-    Safety rules:
-    1. Parse the command with shlex.split()
-    2. Check if first token is in BLOCKED_COMMANDS — if so, return blocked=True
-    3. Truncate output to _MAX_OUTPUT_CHARS chars max
-    4. Timeout after timeout_seconds
-    5. Working dir defaults to user home dir if not specified
-    6. Never allow shell=True — always use list form
     """
-    # Parse command into a list — raises ValueError on bad quoting
+    # Check for dangerous shell metacharacters BEFORE parsing
+    if _DANGEROUS_CHARS.search(command):
+        return {
+            "output": "Command contains blocked characters (pipes, redirects, semicolons, backticks, $).",
+            "exit_code": 1,
+            "blocked": True,
+            "block_reason": "Shell metacharacters detected — use separate commands instead",
+        }
+
+    # Parse into argument list
     try:
         args = shlex.split(command)
     except ValueError as exc:
@@ -72,9 +104,11 @@ async def run_command(
             "block_reason": "Empty command",
         }
 
+    # Check base command
     base_cmd = os.path.basename(args[0]).lower()
-    # Strip .exe suffix on Windows
     if base_cmd.endswith(".exe"):
+        base_cmd = base_cmd[:-4]
+    if base_cmd.endswith(".cmd") or base_cmd.endswith(".bat"):
         base_cmd = base_cmd[:-4]
 
     if base_cmd in BLOCKED_COMMANDS:
@@ -85,13 +119,25 @@ async def run_command(
             "block_reason": f"'{base_cmd}' is on the blocked-commands list",
         }
 
+    # Also check if any argument starts with a known interpreter path
+    for arg in args[1:]:
+        arg_base = os.path.basename(arg).lower()
+        if arg_base.endswith(".exe"):
+            arg_base = arg_base[:-4]
+        if arg_base in BLOCKED_COMMANDS:
+            return {
+                "output": f"Argument references blocked command '{arg_base}'.",
+                "exit_code": 1,
+                "blocked": True,
+                "block_reason": f"Argument '{arg_base}' is blocked",
+            }
+
+    # Working directory confinement
     cwd = str(Path(working_dir).expanduser().resolve()) if working_dir else str(Path.home())
 
     if working_dir:
-        cwd_path = Path(cwd)
-        confined = any(
-            str(cwd_path).startswith(root) for root in _SAFE_ROOTS
-        )
+        cwd_path = str(Path(cwd))
+        confined = any(cwd_path.startswith(root) for root in _SAFE_ROOTS)
         if not confined:
             return {
                 "output": (

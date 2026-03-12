@@ -1,7 +1,6 @@
-import { openUrl } from "@tauri-apps/plugin-opener";
 import { Shield, X } from "lucide-react";
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { api, type Integration, type LogEntry, type Memory, type Planet } from "../api/agent";
+import { api, isTauri, type Integration, type LogEntry, type Memory, type Planet } from "../api/agent";
 
 // ── Helpers ──────────────────────────────────────────────────
 function relativeTime(isoStr: string): string {
@@ -28,12 +27,16 @@ function getSkillBadge(skill: string): { bg: string; color: string } {
 }
 
 async function openOAuthUrl(url: string) {
-  try {
-    await openUrl(url);
-  } catch {
-    // Fallback for browser dev mode (no Tauri runtime)
-    window.open(url, "_blank", "width=500,height=620");
+  if (isTauri) {
+    try {
+      const { openUrl } = await import("@tauri-apps/plugin-opener");
+      await openUrl(url);
+      return;
+    } catch {
+      // Fall through to browser fallback
+    }
   }
+  window.open(url, "_blank", "width=500,height=620");
 }
 
 interface Props {

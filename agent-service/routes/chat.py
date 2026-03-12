@@ -20,6 +20,7 @@ from db.supabase_client import USE_SUPABASE
 from db.supabase_client import table as supa_table
 from memory.memory import (
     build_context_block,
+    load_chat_history,
     load_context,
     load_memories_categorized,
     load_user_profile,
@@ -448,14 +449,20 @@ async def _run_tool(name: str, tool_input: dict[str, Any]) -> str:
 
 @router.get("/history/{planet_id}")
 async def get_chat_history(planet_id: str, request: Request, limit: int = 50) -> list[dict[str, str]]:
-    """Return the last `limit` messages for a planet in chronological order."""
+    """Return the last `limit` messages for a planet in chronological order, with timestamps."""
     uid = request.state.user_id
-    return await load_context(planet_id, limit=limit, db_path=DB_PATH, user_id=uid)
+    return await load_chat_history(planet_id, limit=limit, db_path=DB_PATH, user_id=uid)
+
+
+class ImageAttachment(BaseModel):
+    data: str  # base64-encoded image data (no data: prefix)
+    media_type: str = "image/jpeg"  # image/jpeg, image/png, image/gif, image/webp
 
 
 class ChatRequest(BaseModel):
     planet_id: str
     message: str = Field("", max_length=32000)
+    images: list[ImageAttachment] = Field(default_factory=list, max_length=5)
 
 
 async def _get_planet_name(planet_id: str, db_path: str = DB_PATH) -> str:
@@ -507,7 +514,21 @@ async def chat(body: ChatRequest, request: Request) -> dict[str, Any]:
         client = anthropic.AsyncAnthropic(api_key=api_key)
     else:
         client = _get_client()
-    messages: list[dict[str, Any]] = context + [{"role": "user", "content": body.message}]
+    # Build user content — text + optional images
+    user_content: Any
+    if body.images:
+        user_content = []
+        for img in body.images:
+            user_content.append({
+                "type": "image",
+                "source": {"type": "base64", "media_type": img.media_type, "data": img.data},
+            })
+        if body.message:
+            user_content.append({"type": "text", "text": body.message})
+    else:
+        user_content = body.message
+
+    messages: list[dict[str, Any]] = context + [{"role": "user", "content": user_content}]
 
     # Agentic loop: let Claude call tools until it produces a final text reply
     reply = ""
@@ -615,7 +636,22 @@ async def chat_stream(body: ChatRequest, request: Request) -> StreamingResponse:
                 system_prompt += f"\n\n{context_block}"
 
             client = anthropic.AsyncAnthropic(api_key=api_key) if _user_api_key else _get_client()
-            messages: list[dict[str, Any]] = context + [{"role": "user", "content": body.message}]
+
+            # Build user content — text + optional images
+            user_content: Any
+            if body.images:
+                user_content = []
+                for img in body.images:
+                    user_content.append({
+                        "type": "image",
+                        "source": {"type": "base64", "media_type": img.media_type, "data": img.data},
+                    })
+                if body.message:
+                    user_content.append({"type": "text", "text": body.message})
+            else:
+                user_content = body.message
+
+            messages: list[dict[str, Any]] = context + [{"role": "user", "content": user_content}]
 
             full_reply = ""
 

@@ -1,15 +1,38 @@
-import { Send, Sparkles } from "lucide-react";
+import { Send, Sparkles, Paperclip, Camera, X } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
-import { api, BASE_URL, authHeaders, type Message } from "../api/agent";
+import { api, BASE_URL, type Message } from "../api/agent";
+
+interface ImageAttachment {
+  data: string;       // base64 (no prefix)
+  media_type: string;  // image/jpeg, image/png, etc.
+  preview: string;     // data URL for display
+}
 
 interface MessageWithTime extends Message {
   time: string;
+  images?: ImageAttachment[];
 }
 
 function nowTime() {
   return new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+}
+
+function formatCreatedAt(createdAt: string): string {
+  const date = new Date(createdAt.endsWith("Z") ? createdAt : createdAt + "Z");
+  if (isNaN(date.getTime())) return "";
+  const now = new Date();
+  const isToday =
+    date.getFullYear() === now.getFullYear() &&
+    date.getMonth() === now.getMonth() &&
+    date.getDate() === now.getDate();
+  if (isToday) {
+    return date.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+  }
+  return date.toLocaleDateString([], { month: "short", day: "numeric" }) +
+    " " +
+    date.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
 }
 
 interface Props {
@@ -134,21 +157,50 @@ export function SunChat({ planetId, planetName }: Props) {
   const [focused, setFocused]                 = useState(false);
   const [streamingText, setStreamingText]     = useState("");
   const [toolActivity, setToolActivity]       = useState<string | null>(null);
+  const [attachedImages, setAttachedImages]   = useState<ImageAttachment[]>([]);
   const bottomRef                             = useRef<HTMLDivElement>(null);
   const textareaRef                           = useRef<HTMLTextAreaElement>(null);
+  const fileInputRef                          = useRef<HTMLInputElement>(null);
+  const cameraInputRef                        = useRef<HTMLInputElement>(null);
+
+  const handleFiles = (files: FileList | null) => {
+    if (!files) return;
+    const allowed = ["image/jpeg", "image/png", "image/gif", "image/webp"];
+    const maxSize = 10 * 1024 * 1024; // 10MB
+    const remaining = 5 - attachedImages.length;
+
+    Array.from(files).slice(0, remaining).forEach((file) => {
+      if (!allowed.includes(file.type)) return;
+      if (file.size > maxSize) return;
+      const reader = new FileReader();
+      reader.onload = () => {
+        const dataUrl = reader.result as string;
+        const base64 = dataUrl.split(",")[1];
+        setAttachedImages((prev) => [
+          ...prev,
+          { data: base64, media_type: file.type, preview: dataUrl },
+        ]);
+      };
+      reader.readAsDataURL(file);
+    });
+  };
+
+  const removeImage = (index: number) => {
+    setAttachedImages((prev) => prev.filter((_, i) => i !== index));
+  };
 
   useEffect(() => {
     setGreetingLoading(true);
     // Load persisted history first; fall back to greeting if none exists
-    fetch(`${BASE_URL}/chat/history/${planetId}`, { headers: authHeaders() })
-      .then((r) => r.json())
-      .then((history: Array<{ role: string; content: string }>) => {
+    api
+      .getChatHistory(planetId, 50)
+      .then((history) => {
         if (history && history.length > 0) {
           setMessages(
             history.map((m) => ({
               role: m.role as "user" | "assistant",
               content: m.content,
-              time: "",
+              time: m.created_at ? formatCreatedAt(m.created_at) : "",
             }))
           );
           setGreetingLoading(false);
@@ -173,15 +225,22 @@ export function SunChat({ planetId, planetName }: Props) {
 
   const send = async () => {
     const text = input.trim();
-    if (!text || loading) return;
+    const images = [...attachedImages];
+    if ((!text && images.length === 0) || loading) return;
     setInput("");
+    setAttachedImages([]);
     setError(null);
     setStreamingText("");
     setToolActivity(null);
     if (textareaRef.current) {
       textareaRef.current.style.height = "auto";
     }
-    setMessages((prev) => [...prev, { role: "user", content: text, time: nowTime() }]);
+    const displayText = images.length > 0 && text
+      ? text
+      : images.length > 0
+        ? `[${images.length} image${images.length > 1 ? "s" : ""} attached]`
+        : text;
+    setMessages((prev) => [...prev, { role: "user", content: displayText, time: nowTime(), images }]);
     setLoading(true);
 
     try {
@@ -189,10 +248,15 @@ export function SunChat({ planetId, planetName }: Props) {
       const headers: Record<string, string> = { "Content-Type": "application/json" };
       if (apiKey) headers["X-Api-Key"] = apiKey;
 
+      const payload: Record<string, unknown> = { planet_id: planetId, message: text };
+      if (images.length > 0) {
+        payload.images = images.map((img) => ({ data: img.data, media_type: img.media_type }));
+      }
+
       const response = await fetch(`${BASE_URL}/chat/stream`, {
         method: "POST",
         headers,
-        body: JSON.stringify({ planet_id: planetId, message: text }),
+        body: JSON.stringify(payload),
       });
 
       if (!response.ok || !response.body) {
@@ -259,7 +323,11 @@ export function SunChat({ planetId, planetName }: Props) {
   const hasContent = messages.length > 0 || loading;
 
   return (
-    <div style={{ display: "flex", flexDirection: "column", height: "100%", position: "relative" }}>
+    <div
+      style={{ display: "flex", flexDirection: "column", height: "100%", position: "relative" }}
+      onDragOver={(e) => { e.preventDefault(); e.stopPropagation(); }}
+      onDrop={(e) => { e.preventDefault(); e.stopPropagation(); handleFiles(e.dataTransfer.files); }}
+    >
 
       {/* ── Messages area ── */}
       <div
@@ -462,10 +530,33 @@ export function SunChat({ planetId, planetName }: Props) {
                       }
                 }
               >
+                {/* Image thumbnails */}
+                {msg.images && msg.images.length > 0 && (
+                  <div style={{
+                    display: "flex", gap: "6px", flexWrap: "wrap",
+                    marginBottom: msg.content && !msg.content.startsWith("[") ? "8px" : "0",
+                  }}>
+                    {msg.images.map((img, j) => (
+                      <img
+                        key={j}
+                        src={img.preview}
+                        alt="attachment"
+                        style={{
+                          maxWidth: "180px", maxHeight: "140px",
+                          borderRadius: "10px",
+                          border: "1px solid rgba(99,102,241,0.25)",
+                          objectFit: "cover",
+                        }}
+                      />
+                    ))}
+                  </div>
+                )}
                 {msg.role === "assistant" ? (
                   <AssistantMarkdown content={msg.content} />
                 ) : (
-                  msg.content
+                  (!msg.images || msg.content !== `[${msg.images.length} image${msg.images.length > 1 ? "s" : ""} attached]`)
+                    ? msg.content
+                    : null
                 )}
               </div>
             </div>
@@ -672,6 +763,58 @@ export function SunChat({ planetId, planetName }: Props) {
           flexShrink: 0,
         }}
       >
+        {/* Hidden file inputs */}
+        <input
+          ref={fileInputRef}
+          type="file"
+          accept="image/jpeg,image/png,image/gif,image/webp"
+          multiple
+          style={{ display: "none" }}
+          onChange={(e) => { handleFiles(e.target.files); e.target.value = ""; }}
+        />
+        <input
+          ref={cameraInputRef}
+          type="file"
+          accept="image/*"
+          capture="environment"
+          style={{ display: "none" }}
+          onChange={(e) => { handleFiles(e.target.files); e.target.value = ""; }}
+        />
+
+        {/* Image preview strip */}
+        {attachedImages.length > 0 && (
+          <div style={{
+            display: "flex", gap: "8px", padding: "0 0 8px", overflowX: "auto",
+            scrollbarWidth: "none",
+          }}>
+            {attachedImages.map((img, i) => (
+              <div key={i} style={{ position: "relative", flexShrink: 0 }}>
+                <img
+                  src={img.preview}
+                  alt="preview"
+                  style={{
+                    width: "64px", height: "64px", objectFit: "cover",
+                    borderRadius: "10px",
+                    border: "1px solid rgba(167,139,250,0.2)",
+                  }}
+                />
+                <button
+                  onClick={() => removeImage(i)}
+                  style={{
+                    position: "absolute", top: "-6px", right: "-6px",
+                    width: "18px", height: "18px", borderRadius: "50%",
+                    background: "rgba(239,68,68,0.9)", border: "none",
+                    color: "white", cursor: "pointer",
+                    display: "flex", alignItems: "center", justifyContent: "center",
+                    padding: 0,
+                  }}
+                >
+                  <X size={10} />
+                </button>
+              </div>
+            ))}
+          </div>
+        )}
         <div
           style={{
             position: "relative",
@@ -695,19 +838,49 @@ export function SunChat({ planetId, planetName }: Props) {
               overflow: "hidden",
             }}
           >
-            {/* Sparkle icon when idle */}
+            {/* Action icons — upload, camera, sparkle */}
             <div
               style={{
-                padding: "11px 4px 11px 14px",
-                color: input.trim() ? "rgba(245,158,11,0.5)" : "rgba(167,139,250,0.25)",
-                transition: "color 0.2s",
-                flexShrink: 0,
+                padding: "8px 2px 8px 8px",
                 display: "flex",
                 alignItems: "flex-end",
-                paddingBottom: "12px",
+                gap: "2px",
+                flexShrink: 0,
+                paddingBottom: "10px",
               }}
             >
-              <Sparkles size={13} />
+              <button
+                onClick={() => fileInputRef.current?.click()}
+                title="Attach image"
+                style={{
+                  background: "none", border: "none", cursor: "pointer",
+                  color: attachedImages.length > 0 ? "rgba(245,158,11,0.6)" : "rgba(167,139,250,0.3)",
+                  padding: "3px", display: "flex", transition: "color 0.2s",
+                }}
+                onMouseEnter={(e) => { e.currentTarget.style.color = "rgba(245,158,11,0.7)"; }}
+                onMouseLeave={(e) => { e.currentTarget.style.color = attachedImages.length > 0 ? "rgba(245,158,11,0.6)" : "rgba(167,139,250,0.3)"; }}
+              >
+                <Paperclip size={14} />
+              </button>
+              <button
+                onClick={() => cameraInputRef.current?.click()}
+                title="Take photo"
+                style={{
+                  background: "none", border: "none", cursor: "pointer",
+                  color: "rgba(167,139,250,0.3)",
+                  padding: "3px", display: "flex", transition: "color 0.2s",
+                }}
+                onMouseEnter={(e) => { e.currentTarget.style.color = "rgba(245,158,11,0.7)"; }}
+                onMouseLeave={(e) => { e.currentTarget.style.color = "rgba(167,139,250,0.3)"; }}
+              >
+                <Camera size={14} />
+              </button>
+              <div style={{
+                color: input.trim() ? "rgba(245,158,11,0.5)" : "rgba(167,139,250,0.25)",
+                padding: "3px", display: "flex", transition: "color 0.2s",
+              }}>
+                <Sparkles size={13} />
+              </div>
             </div>
 
             <textarea
@@ -735,6 +908,22 @@ export function SunChat({ planetId, planetName }: Props) {
                 e.target.style.height = "auto";
                 e.target.style.height = Math.min(e.target.scrollHeight, 128) + "px";
               }}
+              onPaste={(e) => {
+                const items = e.clipboardData.items;
+                const imageFiles: File[] = [];
+                for (let i = 0; i < items.length; i++) {
+                  if (items[i].type.startsWith("image/")) {
+                    const file = items[i].getAsFile();
+                    if (file) imageFiles.push(file);
+                  }
+                }
+                if (imageFiles.length > 0) {
+                  e.preventDefault();
+                  const dt = new DataTransfer();
+                  imageFiles.forEach((f) => dt.items.add(f));
+                  handleFiles(dt.files);
+                }
+              }}
               onKeyDown={(e) => {
                 if (e.key === "Enter" && !e.shiftKey) {
                   e.preventDefault();
@@ -744,23 +933,23 @@ export function SunChat({ planetId, planetName }: Props) {
             />
             <button
               onClick={send}
-              disabled={!input.trim() || loading}
+              disabled={(!input.trim() && attachedImages.length === 0) || loading}
               style={{
-                background: input.trim() && !loading
+                background: (input.trim() || attachedImages.length > 0) && !loading
                   ? "linear-gradient(135deg, #f59e0b, #f97316)"
                   : "transparent",
                 border: "none",
                 borderRadius: "14px",
                 margin: "6px",
                 padding: "8px 10px",
-                cursor: input.trim() && !loading ? "pointer" : "not-allowed",
-                color: input.trim() && !loading ? "#0a0508" : "rgba(245,158,11,0.2)",
+                cursor: (input.trim() || attachedImages.length > 0) && !loading ? "pointer" : "not-allowed",
+                color: (input.trim() || attachedImages.length > 0) && !loading ? "#0a0508" : "rgba(245,158,11,0.2)",
                 transition: "all 0.2s",
                 flexShrink: 0,
                 display: "flex",
                 alignItems: "center",
                 justifyContent: "center",
-                boxShadow: input.trim() && !loading
+                boxShadow: (input.trim() || attachedImages.length > 0) && !loading
                   ? "0 0 16px rgba(245,158,11,0.45)"
                   : "none",
               }}
@@ -778,7 +967,7 @@ export function SunChat({ planetId, planetName }: Props) {
             letterSpacing: "0.06em",
           }}
         >
-          ENTER TO SEND · SHIFT+ENTER FOR NEWLINE
+          ENTER TO SEND · SHIFT+ENTER FOR NEWLINE · 📎 UP TO 5 IMAGES
         </p>
       </div>
     </div>

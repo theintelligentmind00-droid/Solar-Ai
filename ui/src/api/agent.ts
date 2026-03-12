@@ -1,6 +1,11 @@
-// In dev, Vite proxies /api → http://localhost:8000 (stripping the prefix).
-// In the packaged Tauri app there is no Vite proxy, so call the sidecar directly.
-export const BASE_URL = import.meta.env.DEV ? "/api" : "http://localhost:8000";
+// Detect Tauri desktop environment
+export const isTauri = !!(window as unknown as Record<string, unknown>).__TAURI_INTERNALS__;
+
+// In Tauri desktop: dev uses Vite proxy, production calls sidecar directly.
+// In web/hosted mode: use VITE_API_URL env var, or same-origin (empty string for proxy).
+export const BASE_URL = isTauri
+  ? (import.meta.env.DEV ? "/api" : "http://127.0.0.1:8000")
+  : (import.meta.env.VITE_API_URL || "");
 
 function getApiKey(): string {
   return sessionStorage.getItem("solar_api_key") ?? "";
@@ -19,6 +24,7 @@ export interface Planet {
   color: string;
   created_at: string;
   last_activity_at?: string | null;
+  planet_type?: string;
 }
 
 export interface Message {
@@ -63,6 +69,31 @@ export interface Task {
   completed_at: string | null;
 }
 
+export interface CivilizationData {
+  planet_id: string;
+  activity_level: "very_active" | "active" | "moderate" | "low" | "dormant";
+  activity_score: number;
+  prosperity: "thriving" | "steady" | "struggling" | "critical";
+  health_score: number;
+  civ_stage: "outpost" | "settlement" | "city" | "metropolis" | "wonder";
+  age_days: number;
+  msg_count_7d: number;
+  msg_count_24h: number;
+  last_activity: string | null;
+  task_counts: { todo: number; doing: number; done: number };
+  overdue_count: number;
+  memory_count: number;
+  milestones: Array<{ id: string; title: string; completed_at: string | null }>;
+  settlements: Array<{
+    id: string;
+    name: string;
+    lat: number;
+    lon: number;
+    size: number;
+    has_overdue: boolean;
+  }>;
+}
+
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
   const res = await fetch(`${BASE_URL}${path}`, {
     headers: { "Content-Type": "application/json", ...authHeaders() },
@@ -80,10 +111,10 @@ export const api = {
   health: () => request<{ status: string }>("/health"),
 
   getPlanets: () => request<Planet[]>("/planets"),
-  createPlanet: (name: string, color?: string) =>
+  createPlanet: (name: string, color?: string, planetType?: string) =>
     request<Planet>("/planets", {
       method: "POST",
-      body: JSON.stringify({ name, color: color ?? "#6366f1" }),
+      body: JSON.stringify({ name, color: color ?? "#6366f1", planet_type: planetType ?? "terra" }),
     }),
   deletePlanet: (id: string) =>
     request<void>(`/planets/${id}`, { method: "DELETE" }),
@@ -93,6 +124,11 @@ export const api = {
       method: "POST",
       body: JSON.stringify({ planet_id, message }),
     }),
+
+  getChatHistory: (planetId: string, limit = 50) =>
+    request<Array<{ role: string; content: string; created_at: string }>>(
+      `/chat/history/${planetId}?limit=${limit}`
+    ),
 
   getLogs: () => request<LogEntry[]>("/logs"),
 
@@ -223,4 +259,7 @@ export const api = {
 
   getShellHistory: () =>
     request<Array<{ summary: string; created_at: string }>>("/shell/history"),
+
+  getCivilization: (planetId: string) =>
+    request<CivilizationData>(`/civilization/${planetId}`),
 };

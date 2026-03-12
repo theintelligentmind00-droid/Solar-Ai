@@ -48,6 +48,47 @@ async def load_context(
         return [{"role": row[0], "content": row[1]} for row in reversed(rows)]
 
 
+async def load_chat_history(
+    planet_id: str,
+    limit: int = 50,
+    db_path: str = DB_PATH,
+    user_id: str = "local",
+) -> list[dict[str, str]]:
+    """Load the last `limit` messages for a planet with timestamps, for the chat history API."""
+    if USE_SUPABASE:
+        result = (
+            supa_table("messages")
+            .select("role, content, created_at")
+            .eq("planet_id", planet_id)
+            .eq("user_id", user_id)
+            .order("created_at", desc=True)
+            .limit(limit)
+            .execute()
+        )
+        rows = result.data  # list of dicts
+        return [
+            {"role": r["role"], "content": r["content"], "created_at": r["created_at"]}
+            for r in reversed(rows)
+        ]
+    else:
+        async with aiosqlite.connect(db_path) as db:
+            async with db.execute(
+                """
+                SELECT role, content, created_at FROM messages
+                WHERE planet_id = ? AND user_id = ?
+                ORDER BY rowid DESC
+                LIMIT ?
+                """,
+                (planet_id, user_id, limit),
+            ) as cursor:
+                rows = await cursor.fetchall()
+
+        return [
+            {"role": row[0], "content": row[1], "created_at": row[2]}
+            for row in reversed(rows)
+        ]
+
+
 async def save_message(
     planet_id: str,
     role: str,

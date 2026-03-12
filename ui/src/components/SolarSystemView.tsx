@@ -1,6 +1,10 @@
 import { HelpCircle, Plus, Radio, Settings } from "lucide-react";
 import React, { useCallback, useEffect, useRef, useState } from "react";
 import { api, type Integration, type Planet } from "../api/agent";
+import { soundManager } from "../sounds/SoundManager";
+import { PlanetCreationAnimation } from "./PlanetCreationAnimation";
+import { SpaceshipAnimation } from "./SpaceshipAnimation";
+import { CometNotificationLayer } from "./CometNotification";
 
 interface Props {
   onSelectPlanet: (planet: Planet) => void;
@@ -14,15 +18,14 @@ interface Props {
 // ── Constants ─────────────────────────────────────────────────
 const ORBIT_SPEEDS = [95, 142, 188, 240, 285];
 const MOON_SPEEDS  = [6.5, 9, 7.5, 11, 8.5];
-const ORBIT_BASE   = 128;
-const ORBIT_GAP    = 102;
+const ORBIT_BASE   = 80;
+const ORBIT_GAP    = 42;
 const CX = 500;
 const CY = 350;
 const SUN_R = 46;
 
-// ── Planet types ──────────────────────────────────────────────
-type PType = "earthlike" | "gas_giant" | "desert" | "ice" | "volcanic" | "oceanic";
-const PTYPES: PType[] = ["earthlike", "gas_giant", "desert", "ice", "volcanic", "oceanic"];
+// ── Planet types — unified with PlanetScene 3D colors ────────
+const PLANET_TYPE_CYCLE = ["terra", "forge", "oasis", "nexus", "citadel", "gaia", "void"];
 
 // Civilization: time-based from created_at
 // < 1 hr → OUTPOST, < 1 day → SETTLEMENT, < 7 days → COLONY, 7+ days → METROPOLIS
@@ -57,14 +60,17 @@ interface TCfg {
   label: string; r: number;
 }
 
-const TC: Record<PType, TCfg> = {
-  earthlike: { hi:"#c5eafe", mid:"#0288d1", lo:"#1a3a5c", atmo:"rgba(80,210,255,0.40)", glow:"#29b6f6", rings:"none", ringA:"", ringB:"", moonBase:"#c4cdd6", moonMid:"#9aa5b0", label:"TERRESTRIAL",  r:16 },
-  gas_giant: { hi:"#fff8e8", mid:"#e8a440", lo:"#7d3c10", atmo:"rgba(240,180,80,0.26)", glow:"#f0b050", rings:"saturn", ringA:"rgba(215,175,85,0.60)", ringB:"rgba(185,145,65,0.35)", moonBase:"#cec0a0", moonMid:"#a89270", label:"GAS GIANT",    r:24 },
-  desert:    { hi:"#ffe5c0", mid:"#e64a19", lo:"#6a0000", atmo:"rgba(240,100,40,0.30)", glow:"#e64a19", rings:"none", ringA:"", ringB:"", moonBase:"#bfb09a", moonMid:"#998070", label:"ARID WORLD",   r:14 },
-  ice:       { hi:"#ecf8ff", mid:"#7ec8e3", lo:"#1a3a5c", atmo:"rgba(140,220,255,0.40)", glow:"#80d8ff", rings:"ice",    ringA:"rgba(200,242,255,0.45)", ringB:"rgba(155,215,240,0.28)", moonBase:"#c0d5e5", moonMid:"#90b5cc", label:"ICE WORLD",    r:16 },
-  volcanic:  { hi:"#ff7043", mid:"#b71c1c", lo:"#100000", atmo:"rgba(255,70,20,0.44)",  glow:"#ff4500", rings:"none", ringA:"", ringB:"", moonBase:"#a08878", moonMid:"#786050", label:"VOLCANIC",      r:15 },
-  oceanic:   { hi:"#90e8ea", mid:"#00737a", lo:"#001828", atmo:"rgba(0,195,215,0.34)",  glow:"#00bcd4", rings:"none", ringA:"", ringB:"", moonBase:"#b0cad8", moonMid:"#80a8bc", label:"OCEANIC WORLD", r:16 },
+// Keyed by planet_type — matches PlanetScene 3D atmosphere colors
+const TC: Record<string, TCfg> = {
+  terra:   { hi:"#c5eafe", mid:"#4da6ff", lo:"#1a3a5c", atmo:"rgba(100,180,255,0.40)", glow:"#4da6ff", rings:"none",   ringA:"", ringB:"", moonBase:"#c4cdd6", moonMid:"#9aa5b0", label:"TERRESTRIAL",  r:16 },
+  forge:   { hi:"#ffcc88", mid:"#e06420", lo:"#5a1800", atmo:"rgba(255,115,20,0.35)",  glow:"#ff7315", rings:"saturn", ringA:"rgba(200,80,20,0.50)", ringB:"rgba(180,65,12,0.30)", moonBase:"#bfb09a", moonMid:"#998070", label:"FORGE WORLD",  r:15 },
+  oasis:   { hi:"#a0fff0", mid:"#2ee8d8", lo:"#003830", atmo:"rgba(46,240,225,0.35)",  glow:"#2ee8d8", rings:"ice",    ringA:"rgba(90,230,215,0.45)", ringB:"rgba(60,200,190,0.28)", moonBase:"#b0e0d8", moonMid:"#80beb5", label:"OASIS WORLD",  r:16 },
+  nexus:   { hi:"#b8e0ff", mid:"#1ec0ff", lo:"#0a2840", atmo:"rgba(30,192,255,0.40)",  glow:"#1ec0ff", rings:"none",   ringA:"", ringB:"", moonBase:"#c0d5e5", moonMid:"#90b5cc", label:"NEXUS WORLD",  r:14 },
+  citadel: { hi:"#ffe8a0", mid:"#ffc030", lo:"#5a3800", atmo:"rgba(255,192,48,0.32)",  glow:"#ffc030", rings:"saturn", ringA:"rgba(255,200,90,0.55)", ringB:"rgba(220,170,60,0.30)", moonBase:"#d0c8a8", moonMid:"#b0a880", label:"CITADEL",      r:17 },
+  gaia:    { hi:"#a0ffb0", mid:"#4cf268", lo:"#0a3818", atmo:"rgba(76,242,104,0.35)",  glow:"#4cf268", rings:"none",   ringA:"", ringB:"", moonBase:"#b0d8b8", moonMid:"#88b890", label:"GAIA WORLD",   r:16 },
+  void:    { hi:"#d8a0ff", mid:"#a630ff", lo:"#1a0040", atmo:"rgba(166,48,255,0.38)",  glow:"#a630ff", rings:"saturn", ringA:"rgba(150,55,235,0.55)", ringB:"rgba(120,40,200,0.30)", moonBase:"#c0b0d8", moonMid:"#a090c0", label:"VOID WORLD",   r:20 },
 };
+const TC_DEFAULT = TC.terra;
 
 // ── Stars ─────────────────────────────────────────────────────
 // Single gradient star field: star size grows with distance from center.
@@ -156,6 +162,14 @@ export function SolarSystemView({ onSelectPlanet, onOpenSettings, onOpenControlC
   const [hoveredMoon, setHoveredMoon] = useState<string | null>(null);
   const [sunHovered, setSunHovered]   = useState(false);
   const [launching, setLaunching]     = useState(false);
+  // Planet creation animation state
+  const [creationTarget, setCreationTarget] = useState<{ x: number; y: number; name: string } | null>(null);
+  const [showSpaceship, setShowSpaceship]   = useState(false);
+  const [creationPhase, setCreationPhase]   = useState<"idle" | "forming" | "spaceship" | "done">("idle");
+  // Comet notifications
+  const [cometQueue, _setCometQueue] = useState<Array<{ id: string; type: "email" | "calendar" | "task" | "alert"; targetX: number; targetY: number; urgent?: boolean }>>([]);
+  // Sun AI state
+  const [sunAiState, _setSunAiState] = useState<"idle" | "processing" | "tool_use" | "success" | "error">("idle");
   const [zoom, setZoom]               = useState(1);
   const [pan, setPan]                 = useState({ x: 0, y: 0 });
   const [notifOpen, setNotifOpen]     = useState(false);
@@ -176,7 +190,18 @@ export function SolarSystemView({ onSelectPlanet, onOpenSettings, onOpenControlC
   const [, setTick] = useState(0);
 
   const load = async () => {
-    try { const data = await api.getPlanets(); setPlanets(data); setError(null); }
+    try {
+      const data = await api.getPlanets();
+      // Auto-diversify: assign a type to any planet missing one or defaulting to "terra"
+      // Uses planet index to cycle through all 7 types so every planet looks different
+      for (let i = 0; i < data.length; i++) {
+        if (!data[i].planet_type || data[i].planet_type === "terra") {
+          data[i].planet_type = PLANET_TYPE_CYCLE[i % PLANET_TYPE_CYCLE.length];
+        }
+      }
+      setPlanets(data);
+      setError(null);
+    }
     catch { setError("Can't reach agent service — is it running?"); }
     finally { setLoading(false); }
   };
@@ -322,20 +347,58 @@ export function SolarSystemView({ onSelectPlanet, onOpenSettings, onOpenControlC
     if (!newName.trim() || launching) return;
     const name = newName.trim();
     setLaunching(true); setAdding(false); setNewName("");
-    try {
-      window.speechSynthesis.cancel();
-      const msg = new SpeechSynthesisUtterance("3... 2... 1... Launch!");
-      msg.pitch = 0.7; msg.rate = 0.88;
-      window.speechSynthesis.speak(msg);
-    } catch { /* not supported */ }
-    setTimeout(async () => {
-      try {
-        const cfg = TC[PTYPES[planets.length % PTYPES.length]];
-        await api.createPlanet(name, cfg.glow);
-        await load();
-      } finally { setTimeout(() => setLaunching(false), 1500); }
-    }, 3200);
+
+    // Calculate where this planet will orbit
+    const idx = planets.length;
+    const orbitR = ORBIT_BASE + idx * ORBIT_GAP;
+    const angle = (idx * 137.5 * Math.PI) / 180;
+    const tx = CX + orbitR * Math.cos(angle);
+    const ty = CY + orbitR * Math.sin(angle);
+
+    // Start formation animation
+    setCreationTarget({ x: tx, y: ty, name });
+    setCreationPhase("forming");
+
+    // Wait for formation animation to complete, then create the planet
+    // The animation calls onReveal → we create the planet there
+    // and onComplete → we launch the spaceship
   };
+
+  const handleCreationReveal = useCallback(async () => {
+    // Planet appears — actually create it in the backend
+    const name = creationTarget?.name;
+    if (!name) return;
+    try {
+      const planetType = PLANET_TYPE_CYCLE[planets.length % PLANET_TYPE_CYCLE.length];
+      const cfg = TC[planetType] ?? TC_DEFAULT;
+      await api.createPlanet(name, cfg.glow, planetType);
+      await load();
+    } catch { /* creation failed */ }
+  }, [creationTarget, planets.length]);
+
+  const handleCreationComplete = useCallback(() => {
+    // Formation done — launch spaceship
+    setCreationPhase("spaceship");
+    setShowSpaceship(true);
+  }, []);
+
+  const handleSpaceshipComplete = useCallback(() => {
+    // Spaceship landed — all done
+    setShowSpaceship(false);
+    setCreationPhase("done");
+    setCreationTarget(null);
+    setLaunching(false);
+
+    // Open the chat panel for the new planet with arrival message
+    if (planets.length > 0) {
+      const newPlanet = planets[planets.length - 1];
+      if (newPlanet) {
+        onSelectPlanet(newPlanet);
+      }
+    }
+
+    setTimeout(() => setCreationPhase("idle"), 500);
+  }, [planets, onSelectPlanet]);
 
 
   const fetchBriefings = async () => {
@@ -407,15 +470,11 @@ export function SolarSystemView({ onSelectPlanet, onOpenSettings, onOpenControlC
       {/* ── Error ───────────────────────────────────────────── */}
       {error && <div style={{ position:"absolute", top:"20px", left:"50%", transform:"translateX(-50%)", zIndex:20, padding:"8px 16px", borderRadius:"10px", fontSize:"12px", background:"rgba(239,68,68,0.1)", border:"1px solid rgba(239,68,68,0.28)", color:"#fca5a5" }}>{error}</div>}
 
-      {/* ── Launch overlay ──────────────────────────────────── */}
-      {launching && (
-        <div style={{ position:"absolute", inset:0, zIndex:40, display:"flex", alignItems:"center", justifyContent:"center", pointerEvents:"none", animation:"fade-in 0.3s ease" }}>
-          <div style={{ textAlign:"center", fontFamily:"monospace" }}>
-            <div style={{ fontSize:"1.5rem", letterSpacing:"0.25em", color:"#f59e0b" }}>🚀 LAUNCHING MISSION</div>
-            <div style={{ fontSize:"0.72rem", letterSpacing:"0.22em", marginTop:"10px", color:"rgba(245,158,11,0.45)" }}>PREPARING ORBITAL INSERTION…</div>
-            <div style={{ display:"flex", gap:"8px", justifyContent:"center", marginTop:"14px" }}>
-              {[0,1,2].map(n => <span key={n} style={{ width:"6px", height:"6px", borderRadius:"50%", background:"rgba(245,158,11,0.7)", display:"inline-block", animation:`dot-bounce 1.2s ease-in-out ${n*200}ms infinite` }} />)}
-            </div>
+      {/* ── Launch overlay (text — only during initial forming) ──── */}
+      {launching && creationPhase === "forming" && (
+        <div style={{ position:"absolute", inset:0, zIndex:40, display:"flex", alignItems:"flex-end", justifyContent:"center", pointerEvents:"none", paddingBottom:"80px" }}>
+          <div style={{ textAlign:"center", fontFamily:"monospace", animation:"fade-in 0.3s ease" }}>
+            <div style={{ fontSize:"0.72rem", letterSpacing:"0.22em", color:"rgba(245,158,11,0.55)" }}>FORMING NEW WORLD…</div>
           </div>
         </div>
       )}
@@ -440,8 +499,7 @@ export function SolarSystemView({ onSelectPlanet, onOpenSettings, onOpenControlC
             )}
             {!briefingLoading && briefings.length === 0 && <div style={{ padding:"24px", textAlign:"center", color:"var(--text-dim)", fontSize:"12px" }}>No missions in orbit yet.</div>}
             {!briefingLoading && briefings.map(({ planet, text }) => {
-              const idx = Math.max(0, planets.findIndex(p => p.id === planet.id));
-              const cfg = TC[PTYPES[idx % PTYPES.length]];
+              const cfg = TC[planet.planet_type ?? 'terra'] ?? TC_DEFAULT;
               const civ = getCivLevel(planet);
               // Parse markdown bullets into structured items
               const lines = text.split("\n").filter(l => l.trim());
@@ -610,8 +668,8 @@ export function SolarSystemView({ onSelectPlanet, onOpenSettings, onOpenControlC
           </linearGradient>
 
           {/* Moon gradients per type — proper 3D sphere, NOT a crescent */}
-          {PTYPES.map(ptype => {
-            const cfg = TC[ptype];
+          {PLANET_TYPE_CYCLE.map(ptype => {
+            const cfg = TC[ptype] ?? TC_DEFAULT;
             return (
               <radialGradient key={`moon-${ptype}`} id={`moon-${ptype}`} cx="32%" cy="28%" r="70%">
                 <stop offset="0%"   stopColor="#f0f2f5"   stopOpacity="0.90" />
@@ -624,8 +682,8 @@ export function SolarSystemView({ onSelectPlanet, onOpenSettings, onOpenControlC
           })}
 
           {/* Per-planet sphere + atmo gradients */}
-          {planets.map((planet, i) => {
-            const cfg = TC[PTYPES[i % PTYPES.length]];
+          {planets.map((planet) => {
+            const cfg = TC[planet.planet_type ?? 'terra'] ?? TC_DEFAULT;
             return (
               <React.Fragment key={`defs-${planet.id}`}>
                 <radialGradient id={`sph-${planet.id}`} cx="30%" cy="24%" r="72%">
@@ -659,17 +717,53 @@ export function SolarSystemView({ onSelectPlanet, onOpenSettings, onOpenControlC
         {/* Asteroids */}
         {ASTEROIDS.map((a, i) => <circle key={`ast${i}`} cx={a.x} cy={a.y} r={a.s} fill="rgba(178,162,132,1)" opacity={a.op} />)}
 
-        {/* Orbit rings */}
-        {planets.map((_, i) => {
+        {/* Orbit rings — activity-encoded colors */}
+        {planets.map((planet, i) => {
           const r = ORBIT_BASE + i * ORBIT_GAP;
-          return <circle key={`orb${i}`} cx={CX} cy={CY} r={r} fill="none" stroke={`rgba(245,158,11,${Math.max(0.022, 0.08 - i * 0.01)})`} strokeWidth="0.65" strokeDasharray="3 10" />;
+          const activity = getActivityLevel(planet.last_activity_at);
+          // Activity-based orbit styling
+          let orbitStroke: string;
+          let orbitOpacity: number;
+          let orbitWidth: number;
+          let orbitDash: string;
+          if (activity === "hot") {
+            orbitStroke = "rgba(255,215,0,1)"; orbitOpacity = 0.8; orbitWidth = 1.8; orbitDash = "none";
+          } else if (activity === "warm") {
+            orbitStroke = "rgba(74,158,255,1)"; orbitOpacity = 0.5; orbitWidth = 1.3; orbitDash = "none";
+          } else {
+            // Check if dormant (>30 days)
+            const lastAct = planet.last_activity_at ? Date.now() - new Date(planet.last_activity_at).getTime() : Infinity;
+            const dormant = lastAct > 30 * 24 * 60 * 60 * 1000;
+            if (dormant) {
+              orbitStroke = "rgba(100,90,70,1)"; orbitOpacity = 0.25; orbitWidth = 0.6; orbitDash = "4 8";
+            } else {
+              orbitStroke = "rgba(200,180,120,1)"; orbitOpacity = 0.35; orbitWidth = 0.8; orbitDash = "3 10";
+            }
+          }
+          return (
+            <g key={`orb${i}`}>
+              <circle cx={CX} cy={CY} r={r} fill="none"
+                stroke={orbitStroke} strokeWidth={orbitWidth} strokeDasharray={orbitDash}
+                opacity={orbitOpacity}
+                style={{ transition: "all 1s ease" }}
+              />
+              {/* Pulse ring for hot planets */}
+              {activity === "hot" && (
+                <circle cx={CX} cy={CY} r={r} fill="none"
+                  stroke="rgba(255,215,0,0.3)" strokeWidth={3}
+                  opacity={0.3}
+                  style={{ animation: "pulse 3s ease-in-out infinite" }}
+                />
+              )}
+            </g>
+          );
         })}
 
         {/* Connection lines */}
         {planets.map((planet, i) => {
           const angle = anglesRef.current.get(planet.id) ?? (i * 137.5 * Math.PI) / 180;
           const r = ORBIT_BASE + i * ORBIT_GAP;
-          const cfg = TC[PTYPES[i % PTYPES.length]];
+          const cfg = TC[planet.planet_type ?? 'terra'] ?? TC_DEFAULT;
           return <line key={`conn${planet.id}`} x1={CX} y1={CY} x2={CX + r * Math.cos(angle)} y2={CY + r * Math.sin(angle)} stroke={cfg.glow} strokeWidth="0.32" strokeOpacity="0.09" strokeDasharray="2.5 8" />;
         })}
 
@@ -677,8 +771,8 @@ export function SolarSystemView({ onSelectPlanet, onOpenSettings, onOpenControlC
         <g
           data-sun
           style={{ cursor:"pointer" }}
-          onClick={() => onSelectPlanet({ id:"sun", name:"Solar — Your AI Brain", status:"active", orbit_radius:0, color:"#FFD700", created_at:"" })}
-          onMouseEnter={() => setSunHovered(true)}
+          onClick={() => { soundManager.play("ui_click"); onSelectPlanet({ id:"sun", name:"Solar — Your AI Brain", status:"active", orbit_radius:0, color:"#FFD700", created_at:"" }); }}
+          onMouseEnter={() => { soundManager.play("ui_hover"); setSunHovered(true); }}
           onMouseLeave={() => setSunHovered(false)}
         >
           {/* Outer diffuse corona — smooth glow, not rays */}
@@ -796,8 +890,8 @@ export function SolarSystemView({ onSelectPlanet, onOpenSettings, onOpenControlC
 
         {/* ── Planets ───────────────────────────────────────── */}
         {planets.map((planet, i) => {
-          const type   = PTYPES[i % PTYPES.length];
-          const cfg    = TC[type];
+          const ptype  = planet.planet_type ?? 'terra';
+          const cfg    = TC[ptype] ?? TC_DEFAULT;
           const orbitR = ORBIT_BASE + i * ORBIT_GAP;
           const angle  = anglesRef.current.get(planet.id) ?? (i * 137.5 * Math.PI) / 180;
           const px     = CX + orbitR * Math.cos(angle);
@@ -814,9 +908,9 @@ export function SolarSystemView({ onSelectPlanet, onOpenSettings, onOpenControlC
           const moonVR    = Math.max(3.2, cfg.r * 0.30);
           const moonHov   = hoveredMoon === planet.id;
 
-          // Rings
-          const ringRX = cfg.r * (type === "gas_giant" ? 2.65 : 2.12);
-          const ringRY = cfg.r * (type === "gas_giant" ? 0.46 : 0.36);
+          // Rings — void (jupiter) gets wider rings
+          const ringRX = cfg.r * (ptype === "void" ? 2.65 : 2.12);
+          const ringRY = cfg.r * (ptype === "void" ? 0.46 : 0.36);
 
           // Civilization (time-based)
           const civ = getCivLevel(planet);
@@ -884,35 +978,35 @@ export function SolarSystemView({ onSelectPlanet, onOpenSettings, onOpenControlC
               {/* Ring back half */}
               {cfg.rings !== "none" && (
                 <>
-                  <ellipse cx={px} cy={py} rx={ringRX} ry={ringRY} fill="none" stroke={cfg.ringA} strokeWidth={type === "gas_giant" ? 10 : 4} clipPath={`url(#ring-bk-${planet.id})`} />
-                  {type === "gas_giant" && <ellipse cx={px} cy={py} rx={ringRX * 0.80} ry={ringRY * 0.80} fill="none" stroke={cfg.ringB} strokeWidth="5" clipPath={`url(#ring-bk-${planet.id})`} />}
+                  <ellipse cx={px} cy={py} rx={ringRX} ry={ringRY} fill="none" stroke={cfg.ringA} strokeWidth={ptype === "void" ? 10 : 4} clipPath={`url(#ring-bk-${planet.id})`} />
+                  {ptype === "void" && <ellipse cx={px} cy={py} rx={ringRX * 0.80} ry={ringRY * 0.80} fill="none" stroke={cfg.ringB} strokeWidth="5" clipPath={`url(#ring-bk-${planet.id})`} />}
                 </>
               )}
 
               {/* Planet sphere */}
               <circle cx={px} cy={py} r={r} fill={`url(#sph-${planet.id})`}
                 style={{ cursor:"pointer", filter:`drop-shadow(0 0 ${isAct ? 18 : isHov ? 13 : 7}px ${cfg.glow}90)`, transition:"r 0.18s" }}
-                onClick={() => onSelectPlanet(planet)}
-                onMouseEnter={() => setHoveredId(planet.id)}
+                onClick={() => { soundManager.play("ui_click"); onSelectPlanet(planet); }}
+                onMouseEnter={() => { soundManager.play("ui_hover"); setHoveredId(planet.id); }}
                 onMouseLeave={() => setHoveredId(null)}
               />
 
-              {/* Surface textures */}
-              {type === "gas_giant" && <rect x={px-r} y={py-r} width={r*2} height={r*2} fill="url(#gas-bands)" clipPath={`url(#cp-${planet.id})`} style={{ pointerEvents:"none" }} />}
-              {type === "ice"       && <rect x={px-r} y={py-r} width={r*2} height={r*2} fill="url(#ice-cracks)" clipPath={`url(#cp-${planet.id})`} style={{ pointerEvents:"none" }} />}
-              {type === "volcanic"  && <>
-                <circle cx={px - r*0.28} cy={py + r*0.32} r={r*0.24} fill="rgba(255,100,0,0.32)" clipPath={`url(#cp-${planet.id})`} style={{ pointerEvents:"none" }} />
-                <circle cx={px + r*0.38} cy={py - r*0.18} r={r*0.18} fill="rgba(255,70,0,0.25)"  clipPath={`url(#cp-${planet.id})`} style={{ pointerEvents:"none" }} />
+              {/* Surface textures — matched to planet_type */}
+              {ptype === "void" && <rect x={px-r} y={py-r} width={r*2} height={r*2} fill="url(#gas-bands)" clipPath={`url(#cp-${planet.id})`} style={{ pointerEvents:"none" }} />}
+              {ptype === "oasis" && <rect x={px-r} y={py-r} width={r*2} height={r*2} fill="url(#ice-cracks)" clipPath={`url(#cp-${planet.id})`} style={{ pointerEvents:"none" }} />}
+              {ptype === "citadel" && <>
+                <circle cx={px - r*0.28} cy={py + r*0.32} r={r*0.24} fill="rgba(255,180,40,0.28)" clipPath={`url(#cp-${planet.id})`} style={{ pointerEvents:"none" }} />
+                <circle cx={px + r*0.38} cy={py - r*0.18} r={r*0.18} fill="rgba(255,160,20,0.22)" clipPath={`url(#cp-${planet.id})`} style={{ pointerEvents:"none" }} />
               </>}
-              {type === "earthlike" && <>
-                <circle cx={px - r*0.22} cy={py - r*0.12} r={r*0.32} fill="rgba(50,110,25,0.24)"  clipPath={`url(#cp-${planet.id})`} style={{ pointerEvents:"none" }} />
-                <circle cx={px + r*0.28} cy={py + r*0.28} r={r*0.26} fill="rgba(35,95,18,0.20)"   clipPath={`url(#cp-${planet.id})`} style={{ pointerEvents:"none" }} />
-                <circle cx={px - r*0.05} cy={py + r*0.18} r={r*0.18} fill="rgba(45,100,20,0.18)"  clipPath={`url(#cp-${planet.id})`} style={{ pointerEvents:"none" }} />
+              {(ptype === "terra" || ptype === "gaia") && <>
+                <circle cx={px - r*0.22} cy={py - r*0.12} r={r*0.32} fill={ptype === "gaia" ? "rgba(40,130,20,0.28)" : "rgba(50,110,25,0.24)"}  clipPath={`url(#cp-${planet.id})`} style={{ pointerEvents:"none" }} />
+                <circle cx={px + r*0.28} cy={py + r*0.28} r={r*0.26} fill={ptype === "gaia" ? "rgba(30,120,15,0.22)" : "rgba(35,95,18,0.20)"}   clipPath={`url(#cp-${planet.id})`} style={{ pointerEvents:"none" }} />
+                <circle cx={px - r*0.05} cy={py + r*0.18} r={r*0.18} fill={ptype === "gaia" ? "rgba(50,140,25,0.20)" : "rgba(45,100,20,0.18)"}  clipPath={`url(#cp-${planet.id})`} style={{ pointerEvents:"none" }} />
               </>}
-              {type === "oceanic"   && <circle cx={px} cy={py - r*0.25} r={r*0.44} fill="rgba(0,95,125,0.22)" clipPath={`url(#cp-${planet.id})`} style={{ pointerEvents:"none" }} />}
-              {type === "desert"    && <>
-                <ellipse cx={px + r*0.1} cy={py + r*0.05} rx={r*0.38} ry={r*0.18} fill="rgba(180,80,20,0.22)" clipPath={`url(#cp-${planet.id})`} style={{ pointerEvents:"none" }} />
-                <ellipse cx={px - r*0.2} cy={py - r*0.28} rx={r*0.25} ry={r*0.12} fill="rgba(160,60,10,0.18)" clipPath={`url(#cp-${planet.id})`} style={{ pointerEvents:"none" }} />
+              {ptype === "nexus" && <circle cx={px} cy={py - r*0.25} r={r*0.44} fill="rgba(20,120,180,0.22)" clipPath={`url(#cp-${planet.id})`} style={{ pointerEvents:"none" }} />}
+              {ptype === "forge" && <>
+                <ellipse cx={px + r*0.1} cy={py + r*0.05} rx={r*0.38} ry={r*0.18} fill="rgba(200,80,15,0.25)" clipPath={`url(#cp-${planet.id})`} style={{ pointerEvents:"none" }} />
+                <ellipse cx={px - r*0.2} cy={py - r*0.28} rx={r*0.25} ry={r*0.12} fill="rgba(180,60,10,0.20)" clipPath={`url(#cp-${planet.id})`} style={{ pointerEvents:"none" }} />
               </>}
 
               {/* 3D specular highlight */}
@@ -930,8 +1024,8 @@ export function SolarSystemView({ onSelectPlanet, onOpenSettings, onOpenControlC
               {/* Ring front half */}
               {cfg.rings !== "none" && (
                 <>
-                  <ellipse cx={px} cy={py} rx={ringRX} ry={ringRY} fill="none" stroke={cfg.ringA} strokeWidth={type === "gas_giant" ? 10 : 4} clipPath={`url(#ring-ft-${planet.id})`} />
-                  {type === "gas_giant" && <ellipse cx={px} cy={py} rx={ringRX * 0.80} ry={ringRY * 0.80} fill="none" stroke={cfg.ringB} strokeWidth="5" clipPath={`url(#ring-ft-${planet.id})`} />}
+                  <ellipse cx={px} cy={py} rx={ringRX} ry={ringRY} fill="none" stroke={cfg.ringA} strokeWidth={ptype === "void" ? 10 : 4} clipPath={`url(#ring-ft-${planet.id})`} />
+                  {ptype === "void" && <ellipse cx={px} cy={py} rx={ringRX * 0.80} ry={ringRY * 0.80} fill="none" stroke={cfg.ringB} strokeWidth="5" clipPath={`url(#ring-ft-${planet.id})`} />}
                 </>
               )}
 
@@ -1014,12 +1108,12 @@ export function SolarSystemView({ onSelectPlanet, onOpenSettings, onOpenControlC
               {/* Moon — realistic grey sphere with craters */}
               <g
                 style={{ cursor:"pointer" }}
-                onMouseEnter={() => setHoveredMoon(planet.id)}
+                onMouseEnter={() => { soundManager.play("ui_hover"); setHoveredMoon(planet.id); }}
                 onMouseLeave={() => setHoveredMoon(null)}
-                onClick={() => onSelectPlanet(planet)}
+                onClick={() => { soundManager.play("ui_click"); onSelectPlanet(planet); }}
               >
                 {/* 3D sphere via gradient — NOT a crescent */}
-                <circle cx={mx} cy={my} r={moonVR} fill={`url(#moon-${type})`} filter="url(#moon-glow)" />
+                <circle cx={mx} cy={my} r={moonVR} fill={`url(#moon-${ptype})`} filter="url(#moon-glow)" />
                 {/* Craters (visible at all zoom levels, more at high zoom) */}
                 <circle cx={mx - moonVR*0.32} cy={my - moonVR*0.18} r={moonVR*0.26} fill="rgba(0,0,18,0.38)" clipPath={`url(#moon-cp-${planet.id})`} style={{ pointerEvents:"none" }} />
                 <circle cx={mx - moonVR*0.32} cy={my - moonVR*0.18} r={moonVR*0.26} fill="none" stroke="rgba(200,210,225,0.20)" strokeWidth="0.5" clipPath={`url(#moon-cp-${planet.id})`} style={{ pointerEvents:"none" }} />
@@ -1088,13 +1182,77 @@ export function SolarSystemView({ onSelectPlanet, onOpenSettings, onOpenControlC
           <text x={CX} y={CY + 110} textAnchor="middle" fill="rgba(245,158,11,0.20)" fontSize="8" letterSpacing="1.5" fontFamily="monospace">LAUNCH YOUR FIRST MISSION ↓</text>
         </>}
 
+        {/* ── Planet Creation Animation ─────────────────────── */}
+        {creationTarget && creationPhase === "forming" && (
+          <PlanetCreationAnimation
+            targetX={creationTarget.x}
+            targetY={creationTarget.y}
+            onReveal={handleCreationReveal}
+            onComplete={handleCreationComplete}
+          />
+        )}
+
+        {/* ── Spaceship Landing Animation ──────────────────── */}
+        {showSpaceship && creationTarget && (
+          <SpaceshipAnimation
+            targetX={creationTarget.x}
+            targetY={creationTarget.y}
+            onComplete={handleSpaceshipComplete}
+          />
+        )}
+
+        {/* ── Comet Notifications ──────────────────────────── */}
+        <CometNotificationLayer comets={cometQueue} />
+
+        {/* ── Sun AI State Indicator ───────────────────────── */}
+        {sunAiState !== "idle" && (
+          <g style={{ pointerEvents: "none" }}>
+            {/* Processing corona flares */}
+            {(sunAiState === "processing" || sunAiState === "tool_use") && (
+              <>
+                {[0, 45, 90, 135].map((angle, k) => {
+                  const rad = (angle * Math.PI) / 180;
+                  const flareLen = SUN_R * 0.6;
+                  const x1 = CX + (SUN_R + 4) * Math.cos(rad);
+                  const y1 = CY + (SUN_R + 4) * Math.sin(rad);
+                  const x2 = CX + (SUN_R + 4 + flareLen) * Math.cos(rad);
+                  const y2 = CY + (SUN_R + 4 + flareLen) * Math.sin(rad);
+                  return (
+                    <line key={`flare${k}`}
+                      x1={x1} y1={y1} x2={x2} y2={y2}
+                      stroke="rgba(255,170,30,0.4)"
+                      strokeWidth="3"
+                      strokeLinecap="round"
+                      style={{ animation: `pulse ${1.5 + k * 0.3}s ease-in-out infinite`, transformOrigin: `${CX}px ${CY}px` }}
+                    />
+                  );
+                })}
+              </>
+            )}
+            {/* Success ring */}
+            {sunAiState === "success" && (
+              <circle cx={CX} cy={CY} r={SUN_R + 10}
+                fill="none" stroke="rgba(100,255,100,0.4)" strokeWidth="3"
+                style={{ animation: "pulse-ring 1s ease-out forwards" }}
+              />
+            )}
+            {/* Error red tint */}
+            {sunAiState === "error" && (
+              <circle cx={CX} cy={CY} r={SUN_R + 5}
+                fill="rgba(255,50,50,0.15)"
+                style={{ animation: "pulse 0.5s ease-in-out" }}
+              />
+            )}
+          </g>
+        )}
+
         {/* Status bar moved to HTML overlay below */}
       </svg>
 
       {/* ── Launch button ────────────────────────────────────── */}
       <div style={{ position:"absolute", bottom:"22px", left:"50%", transform:"translateX(-50%)", zIndex:10, display:"flex", alignItems:"center", gap:"10px" }}>
         {launching ? (
-          <div style={{ fontSize:"11px", padding:"8px 20px", borderRadius:"20px", color:"var(--sun-color)", border:"1px solid rgba(245,158,11,0.38)", fontFamily:"monospace", letterSpacing:"0.16em", animation:"blink 0.8s step-end infinite" }}>● MISSION LAUNCHING…</div>
+          <div style={{ fontSize:"11px", padding:"8px 20px", borderRadius:"20px", color:"var(--sun-color)", border:"1px solid rgba(245,158,11,0.38)", fontFamily:"monospace", letterSpacing:"0.16em", animation:"blink 0.8s step-end infinite" }}>● {creationPhase === "spaceship" ? "HOUSTON EN ROUTE…" : creationPhase === "forming" ? "WORLD FORMING…" : "MISSION LAUNCHING…"}</div>
         ) : adding ? (
           <>
             <input autoFocus
@@ -1119,3 +1277,4 @@ export function SolarSystemView({ onSelectPlanet, onOpenSettings, onOpenControlC
     </div>
   );
 }
+

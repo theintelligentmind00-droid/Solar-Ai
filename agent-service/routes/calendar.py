@@ -72,7 +72,7 @@ async def get_auth_url() -> dict[str, str]:
                 await calendar_skill.save_config(gmail_id, gmail_secret)
                 creds = (gmail_id, gmail_secret)
         except Exception:
-            pass
+            logger.warning("Failed to fall back to Gmail credentials for Calendar OAuth")
 
     if creds is None:
         raise HTTPException(
