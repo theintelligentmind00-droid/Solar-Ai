@@ -74,8 +74,12 @@ async def run_daily_briefing() -> None:
 @asynccontextmanager
 async def lifespan(application: FastAPI) -> AsyncGenerator[None, None]:
     await init_db()
-    from db.schema import DB_PATH as _db_path
-    print(f"[Solar AI OS] Agent service started. DB: {_db_path}")
+    from db.supabase_client import USE_SUPABASE as _use_supa
+    if _use_supa:
+        print("[Solar AI OS] Agent service started. DB: Supabase (cloud)")
+    else:
+        from db.schema import DB_PATH as _db_path
+        print(f"[Solar AI OS] Agent service started. DB: {_db_path}")
     if WEB_MODE:
         print("[Solar AI OS] WEB_MODE enabled — shell and file reader tools disabled.")
 
