@@ -1,8 +1,13 @@
 """SQLite schema and initialization for Solar AI OS."""
 
+import logging
 import os
 
 import aiosqlite
+
+from db.supabase_client import USE_SUPABASE
+
+logger = logging.getLogger(__name__)
 
 _DATA_DIR = os.path.join(os.path.expanduser("~"), ".solar-ai")
 os.makedirs(_DATA_DIR, exist_ok=True)
@@ -126,11 +131,16 @@ _MIGRATIONS = [
     "ALTER TABLE memories ADD COLUMN last_accessed TEXT",
     "ALTER TABLE memories ADD COLUMN access_count INTEGER DEFAULT 0",
     "ALTER TABLE planets ADD COLUMN last_activity_at TEXT",
+    "ALTER TABLE planets ADD COLUMN planet_type TEXT DEFAULT 'terra'",
 ]
 
 
 async def init_db(db_path: str = DB_PATH) -> None:
     """Create all tables, run migrations, and seed default rows. Safe to call on every startup."""
+    if USE_SUPABASE:
+        logger.info("Supabase mode — skipping local SQLite init (tables managed via migration SQL)")
+        return
+
     async with aiosqlite.connect(db_path) as db:
         await db.executescript(_CREATE_TABLES)
         await db.executescript(_SEED_INTEGRATIONS)

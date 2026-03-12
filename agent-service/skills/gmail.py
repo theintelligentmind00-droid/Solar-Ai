@@ -12,6 +12,8 @@ import aiosqlite
 import httpx
 
 from db.schema import DB_PATH
+from db.supabase_client import USE_SUPABASE
+from db.supabase_client import table as supa_table
 
 logger = logging.getLogger(__name__)
 
@@ -26,90 +28,129 @@ TIMEOUT = 20  # seconds
 
 async def is_configured() -> bool:
     """Return True if client_id/secret AND a valid token exist in DB."""
-    async with aiosqlite.connect(DB_PATH) as db:
-        db.row_factory = aiosqlite.Row
-        async with db.execute(
-            "SELECT id FROM oauth_configs WHERE service = ?", (SERVICE,)
-        ) as cur:
-            has_config = await cur.fetchone() is not None
-        async with db.execute(
-            "SELECT id FROM oauth_tokens WHERE service = ?", (SERVICE,)
-        ) as cur:
-            has_token = await cur.fetchone() is not None
-    return has_config and has_token
+    if USE_SUPABASE:
+        cfg = supa_table("oauth_configs").select("id").eq("service", SERVICE).limit(1).execute()
+        tok = supa_table("oauth_tokens").select("id").eq("service", SERVICE).limit(1).execute()
+        return bool(cfg.data) and bool(tok.data)
+    else:
+        async with aiosqlite.connect(DB_PATH) as db:
+            db.row_factory = aiosqlite.Row
+            async with db.execute(
+                "SELECT id FROM oauth_configs WHERE service = ?", (SERVICE,)
+            ) as cur:
+                has_config = await cur.fetchone() is not None
+            async with db.execute(
+                "SELECT id FROM oauth_tokens WHERE service = ?", (SERVICE,)
+            ) as cur:
+                has_token = await cur.fetchone() is not None
+        return has_config and has_token
 
 
 async def has_config() -> bool:
     """Return True if client credentials have been saved."""
-    async with aiosqlite.connect(DB_PATH) as db:
-        async with db.execute(
-            "SELECT id FROM oauth_configs WHERE service = ?", (SERVICE,)
-        ) as cur:
-            return await cur.fetchone() is not None
+    if USE_SUPABASE:
+        result = supa_table("oauth_configs").select("id").eq("service", SERVICE).limit(1).execute()
+        return bool(result.data)
+    else:
+        async with aiosqlite.connect(DB_PATH) as db:
+            async with db.execute(
+                "SELECT id FROM oauth_configs WHERE service = ?", (SERVICE,)
+            ) as cur:
+                return await cur.fetchone() is not None
 
 
 async def get_client_credentials() -> tuple[str, str] | None:
     """Return (client_id, client_secret) from DB, or None."""
-    async with aiosqlite.connect(DB_PATH) as db:
-        db.row_factory = aiosqlite.Row
-        async with db.execute(
-            "SELECT client_id, client_secret FROM oauth_configs WHERE service = ?",
-            (SERVICE,),
-        ) as cur:
-            row = await cur.fetchone()
-    if row is None:
-        return None
-    return row["client_id"], row["client_secret"]
+    if USE_SUPABASE:
+        result = supa_table("oauth_configs").select("client_id, client_secret").eq("service", SERVICE).limit(1).execute()
+        row = result.data[0] if result.data else None
+        if row is None:
+            return None
+        return row["client_id"], row["client_secret"]
+    else:
+        async with aiosqlite.connect(DB_PATH) as db:
+            db.row_factory = aiosqlite.Row
+            async with db.execute(
+                "SELECT client_id, client_secret FROM oauth_configs WHERE service = ?",
+                (SERVICE,),
+            ) as cur:
+                row = await cur.fetchone()
+        if row is None:
+            return None
+        return row["client_id"], row["client_secret"]
 
 
 async def save_config(client_id: str, client_secret: str) -> None:
     """Save or update OAuth client credentials."""
-    async with aiosqlite.connect(DB_PATH) as db:
-        await db.execute(
-            """
-            INSERT INTO oauth_configs (id, service, client_id, client_secret)
-            VALUES ('cfg-gmail', ?, ?, ?)
-            ON CONFLICT(service) DO UPDATE SET
-                client_id = excluded.client_id,
-                client_secret = excluded.client_secret,
-                updated_at = datetime('now')
-            """,
-            (SERVICE, client_id, client_secret),
-        )
-        await db.commit()
+    if USE_SUPABASE:
+        supa_table("oauth_configs").upsert({
+            "id": "cfg-gmail",
+            "service": SERVICE,
+            "client_id": client_id,
+            "client_secret": client_secret,
+            "updated_at": datetime.now(timezone.utc).isoformat(),
+        }, on_conflict="service").execute()
+    else:
+        async with aiosqlite.connect(DB_PATH) as db:
+            await db.execute(
+                """
+                INSERT INTO oauth_configs (id, service, client_id, client_secret)
+                VALUES ('cfg-gmail', ?, ?, ?)
+                ON CONFLICT(service) DO UPDATE SET
+                    client_id = excluded.client_id,
+                    client_secret = excluded.client_secret,
+                    updated_at = datetime('now')
+                """,
+                (SERVICE, client_id, client_secret),
+            )
+            await db.commit()
 
 
 async def save_token(token_data: dict[str, Any]) -> None:
     """Persist OAuth token dict to DB."""
-    async with aiosqlite.connect(DB_PATH) as db:
-        await db.execute(
-            """
-            INSERT INTO oauth_tokens
-                (id, service, access_token, refresh_token, token_expiry, scopes)
-            VALUES ('tok-gmail', ?, ?, ?, ?, ?)
-            ON CONFLICT(service) DO UPDATE SET
-                access_token = excluded.access_token,
-                refresh_token = excluded.refresh_token,
-                token_expiry = excluded.token_expiry,
-                scopes = excluded.scopes,
-                updated_at = datetime('now')
-            """,
-            (
-                SERVICE,
-                token_data.get("access_token", ""),
-                token_data.get("refresh_token"),
-                token_data.get("expiry"),
-                json.dumps(token_data.get("scopes", SCOPES)),
-            ),
-        )
-        await db.commit()
+    if USE_SUPABASE:
+        supa_table("oauth_tokens").upsert({
+            "id": "tok-gmail",
+            "service": SERVICE,
+            "access_token": token_data.get("access_token", ""),
+            "refresh_token": token_data.get("refresh_token"),
+            "token_expiry": token_data.get("expiry"),
+            "scopes": json.dumps(token_data.get("scopes", SCOPES)),
+            "updated_at": datetime.now(timezone.utc).isoformat(),
+        }, on_conflict="service").execute()
+    else:
+        async with aiosqlite.connect(DB_PATH) as db:
+            await db.execute(
+                """
+                INSERT INTO oauth_tokens
+                    (id, service, access_token, refresh_token, token_expiry, scopes)
+                VALUES ('tok-gmail', ?, ?, ?, ?, ?)
+                ON CONFLICT(service) DO UPDATE SET
+                    access_token = excluded.access_token,
+                    refresh_token = excluded.refresh_token,
+                    token_expiry = excluded.token_expiry,
+                    scopes = excluded.scopes,
+                    updated_at = datetime('now')
+                """,
+                (
+                    SERVICE,
+                    token_data.get("access_token", ""),
+                    token_data.get("refresh_token"),
+                    token_data.get("expiry"),
+                    json.dumps(token_data.get("scopes", SCOPES)),
+                ),
+            )
+            await db.commit()
 
 
 async def delete_token() -> None:
     """Remove stored token (disconnect)."""
-    async with aiosqlite.connect(DB_PATH) as db:
-        await db.execute("DELETE FROM oauth_tokens WHERE service = ?", (SERVICE,))
-        await db.commit()
+    if USE_SUPABASE:
+        supa_table("oauth_tokens").delete().eq("service", SERVICE).execute()
+    else:
+        async with aiosqlite.connect(DB_PATH) as db:
+            await db.execute("DELETE FROM oauth_tokens WHERE service = ?", (SERVICE,))
+            await db.commit()
 
 
 async def _get_access_token() -> str:
@@ -119,14 +160,20 @@ async def _get_access_token() -> str:
         raise RuntimeError("Gmail not configured — save client credentials first.")
     client_id, client_secret = creds_pair
 
-    async with aiosqlite.connect(DB_PATH) as db:
-        db.row_factory = aiosqlite.Row
-        async with db.execute(
-            "SELECT access_token, refresh_token, token_expiry FROM oauth_tokens"
-            " WHERE service = ?",
-            (SERVICE,),
-        ) as cur:
-            row = await cur.fetchone()
+    if USE_SUPABASE:
+        result = supa_table("oauth_tokens").select(
+            "access_token, refresh_token, token_expiry"
+        ).eq("service", SERVICE).limit(1).execute()
+        row = result.data[0] if result.data else None
+    else:
+        async with aiosqlite.connect(DB_PATH) as db:
+            db.row_factory = aiosqlite.Row
+            async with db.execute(
+                "SELECT access_token, refresh_token, token_expiry FROM oauth_tokens"
+                " WHERE service = ?",
+                (SERVICE,),
+            ) as cur:
+                row = await cur.fetchone()
 
     if row is None:
         raise RuntimeError("Gmail not authorized — complete the OAuth flow first.")

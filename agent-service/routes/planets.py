@@ -9,6 +9,8 @@ from fastapi import APIRouter, HTTPException, Request
 from pydantic import BaseModel, Field, field_validator
 
 from db.schema import DB_PATH
+from db.supabase_client import USE_SUPABASE
+from db.supabase_client import table as supa_table
 
 router = APIRouter(prefix="/planets", tags=["planets"])
 
@@ -59,59 +61,112 @@ class PlanetUpdate(BaseModel):
         return v
 
 
+_PLANET_COLUMNS = "id, name, status, orbit_radius, color, created_at, last_activity_at, planet_type"
+
+
 @router.get("")
 async def list_planets(request: Request) -> list[dict[str, Any]]:
     uid = request.state.user_id
-    async with aiosqlite.connect(DB_PATH) as db:
-        db.row_factory = aiosqlite.Row
-        async with db.execute(
-            "SELECT id, name, status, orbit_radius, color, created_at, last_activity_at, planet_type "
-            "FROM planets WHERE user_id = ? ORDER BY created_at",
-            (uid,),
-        ) as cursor:
-            rows = await cursor.fetchall()
-    return [dict(row) for row in rows]
+    if USE_SUPABASE:
+        result = (
+            supa_table("planets")
+            .select(_PLANET_COLUMNS)
+            .eq("user_id", uid)
+            .order("created_at")
+            .execute()
+        )
+        return result.data
+    else:
+        async with aiosqlite.connect(DB_PATH) as db:
+            db.row_factory = aiosqlite.Row
+            async with db.execute(
+                f"SELECT {_PLANET_COLUMNS} "
+                "FROM planets WHERE user_id = ? ORDER BY created_at",
+                (uid,),
+            ) as cursor:
+                rows = await cursor.fetchall()
+        return [dict(row) for row in rows]
 
 
 @router.post("", status_code=201)
 async def create_planet(body: PlanetCreate, request: Request) -> dict[str, Any]:
     uid = request.state.user_id
     planet_id = str(uuid.uuid4())
-    async with aiosqlite.connect(DB_PATH) as db:
-        await db.execute(
-            "INSERT INTO planets (id, name, orbit_radius, color, planet_type, user_id) VALUES (?, ?, ?, ?, ?, ?)",
-            (planet_id, body.name, body.orbit_radius, body.color, body.planet_type, uid),
-        )
-        await db.commit()
+    if USE_SUPABASE:
+        supa_table("planets").insert({
+            "id": planet_id,
+            "name": body.name,
+            "orbit_radius": body.orbit_radius,
+            "color": body.color,
+            "planet_type": body.planet_type,
+            "user_id": uid,
+        }).execute()
+    else:
+        async with aiosqlite.connect(DB_PATH) as db:
+            await db.execute(
+                "INSERT INTO planets (id, name, orbit_radius, color, planet_type, user_id) VALUES (?, ?, ?, ?, ?, ?)",
+                (planet_id, body.name, body.orbit_radius, body.color, body.planet_type, uid),
+            )
+            await db.commit()
     return {"id": planet_id, "name": body.name, "status": "active"}
 
 
 @router.get("/{planet_id}")
 async def get_planet(planet_id: str, request: Request) -> dict[str, Any]:
     uid = request.state.user_id
-    async with aiosqlite.connect(DB_PATH) as db:
-        db.row_factory = aiosqlite.Row
-        async with db.execute(
-            "SELECT id, name, status, orbit_radius, color, created_at, last_activity_at, planet_type "
-            "FROM planets WHERE id = ? AND user_id = ?",
-            (planet_id, uid),
-        ) as cursor:
-            row = await cursor.fetchone()
-    if not row:
-        raise HTTPException(status_code=404, detail=f"Planet '{planet_id}' not found")
-    return dict(row)
+    if USE_SUPABASE:
+        result = (
+            supa_table("planets")
+            .select(_PLANET_COLUMNS)
+            .eq("id", planet_id)
+            .eq("user_id", uid)
+            .execute()
+        )
+        if not result.data:
+            raise HTTPException(status_code=404, detail=f"Planet '{planet_id}' not found")
+        return result.data[0]
+    else:
+        async with aiosqlite.connect(DB_PATH) as db:
+            db.row_factory = aiosqlite.Row
+            async with db.execute(
+                f"SELECT {_PLANET_COLUMNS} "
+                "FROM planets WHERE id = ? AND user_id = ?",
+                (planet_id, uid),
+            ) as cursor:
+                row = await cursor.fetchone()
+        if not row:
+            raise HTTPException(status_code=404, detail=f"Planet '{planet_id}' not found")
+        return dict(row)
 
 
 @router.delete("/{planet_id}", status_code=204)
 async def delete_planet(planet_id: str, request: Request) -> None:
     uid = request.state.user_id
-    async with aiosqlite.connect(DB_PATH) as db:
-        # Delete orphaned child rows before removing the planet
-        await db.execute("DELETE FROM messages WHERE planet_id = ? AND user_id = ?", (planet_id, uid))
-        await db.execute("DELETE FROM tasks WHERE planet_id = ? AND user_id = ?", (planet_id, uid))
-        await db.execute("DELETE FROM memories WHERE planet_id = ? AND user_id = ?", (planet_id, uid))
-        await db.execute("DELETE FROM action_log WHERE planet_id = ?", (planet_id,))
-        result = await db.execute("DELETE FROM planets WHERE id = ? AND user_id = ?", (planet_id, uid))
-        await db.commit()
-    if result.rowcount == 0:
-        raise HTTPException(status_code=404, detail=f"Planet '{planet_id}' not found")
+    if USE_SUPABASE:
+        # Check planet exists first
+        check = (
+            supa_table("planets")
+            .select("id")
+            .eq("id", planet_id)
+            .eq("user_id", uid)
+            .execute()
+        )
+        if not check.data:
+            raise HTTPException(status_code=404, detail=f"Planet '{planet_id}' not found")
+        # Delete child rows before removing the planet
+        supa_table("messages").delete().eq("planet_id", planet_id).eq("user_id", uid).execute()
+        supa_table("tasks").delete().eq("planet_id", planet_id).eq("user_id", uid).execute()
+        supa_table("memories").delete().eq("planet_id", planet_id).eq("user_id", uid).execute()
+        supa_table("action_log").delete().eq("planet_id", planet_id).execute()
+        supa_table("planets").delete().eq("id", planet_id).eq("user_id", uid).execute()
+    else:
+        async with aiosqlite.connect(DB_PATH) as db:
+            # Delete orphaned child rows before removing the planet
+            await db.execute("DELETE FROM messages WHERE planet_id = ? AND user_id = ?", (planet_id, uid))
+            await db.execute("DELETE FROM tasks WHERE planet_id = ? AND user_id = ?", (planet_id, uid))
+            await db.execute("DELETE FROM memories WHERE planet_id = ? AND user_id = ?", (planet_id, uid))
+            await db.execute("DELETE FROM action_log WHERE planet_id = ?", (planet_id,))
+            result = await db.execute("DELETE FROM planets WHERE id = ? AND user_id = ?", (planet_id, uid))
+            await db.commit()
+        if result.rowcount == 0:
+            raise HTTPException(status_code=404, detail=f"Planet '{planet_id}' not found")

@@ -7,6 +7,8 @@ import anthropic
 from fastapi import APIRouter
 
 from db.schema import DB_PATH
+from db.supabase_client import USE_SUPABASE
+from db.supabase_client import table as supa_table
 from memory.memory import load_context, load_memories
 
 router = APIRouter()
@@ -26,6 +28,9 @@ async def get_greeting(planet_id: str) -> dict[str, str | None]:
 
         if planet_id == "sun":
             planet_name = "Main Agent"
+        elif USE_SUPABASE:
+            result = supa_table("planets").select("name").eq("id", planet_id).limit(1).execute()
+            planet_name = result.data[0]["name"] if result.data else planet_id
         else:
             async with aiosqlite.connect(DB_PATH) as db:
                 async with db.execute(

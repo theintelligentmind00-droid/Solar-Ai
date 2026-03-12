@@ -11,6 +11,8 @@ import anthropic
 
 import config
 from db.schema import DB_PATH
+from db.supabase_client import USE_SUPABASE
+from db.supabase_client import table as supa_table
 
 
 async def _get_calendar_context() -> str:
@@ -61,33 +63,44 @@ async def _get_gmail_context() -> str:
 async def _get_tasks_context(planet_id: str | None = None) -> str:
     """Fetch top open tasks from DB, optionally filtered by planet."""
     try:
-        async with aiosqlite.connect(DB_PATH) as db:
-            db.row_factory = aiosqlite.Row
+        if USE_SUPABASE:
+            query = supa_table("tasks").select("title, status, priority").neq("status", "done")
             if planet_id:
-                async with db.execute(
-                    """
-                    SELECT title, status, priority FROM tasks
-                    WHERE status != 'done' AND planet_id = ?
-                    ORDER BY CASE priority WHEN 'high' THEN 1
-                                          WHEN 'medium' THEN 2
-                                          ELSE 3 END
-                    LIMIT 20
-                    """,
-                    (planet_id,),
-                ) as cur:
-                    rows = await cur.fetchall()
-            else:
-                async with db.execute(
-                    """
-                    SELECT title, status, priority FROM tasks
-                    WHERE status != 'done'
-                    ORDER BY CASE priority WHEN 'high' THEN 1
-                                          WHEN 'medium' THEN 2
-                                          ELSE 3 END
-                    LIMIT 20
-                    """
-                ) as cur:
-                    rows = await cur.fetchall()
+                query = query.eq("planet_id", planet_id)
+            query = query.order("priority").limit(20)
+            result = query.execute()
+            rows = result.data or []
+            # Sort by priority in Python (Supabase sorts alphabetically, not by custom order)
+            priority_order = {"high": 1, "medium": 2, "low": 3}
+            rows.sort(key=lambda r: priority_order.get(r.get("priority", "low"), 3))
+        else:
+            async with aiosqlite.connect(DB_PATH) as db:
+                db.row_factory = aiosqlite.Row
+                if planet_id:
+                    async with db.execute(
+                        """
+                        SELECT title, status, priority FROM tasks
+                        WHERE status != 'done' AND planet_id = ?
+                        ORDER BY CASE priority WHEN 'high' THEN 1
+                                              WHEN 'medium' THEN 2
+                                              ELSE 3 END
+                        LIMIT 20
+                        """,
+                        (planet_id,),
+                    ) as cur:
+                        rows = [dict(r) for r in await cur.fetchall()]
+                else:
+                    async with db.execute(
+                        """
+                        SELECT title, status, priority FROM tasks
+                        WHERE status != 'done'
+                        ORDER BY CASE priority WHEN 'high' THEN 1
+                                              WHEN 'medium' THEN 2
+                                              ELSE 3 END
+                        LIMIT 20
+                        """
+                    ) as cur:
+                        rows = [dict(r) for r in await cur.fetchall()]
         if not rows:
             return "No open tasks."
         lines = [
@@ -102,23 +115,31 @@ async def _get_tasks_context(planet_id: str | None = None) -> str:
 async def _get_memories_context(planet_id: str | None = None) -> str:
     """Fetch recent memories from DB."""
     try:
-        async with aiosqlite.connect(DB_PATH) as db:
-            db.row_factory = aiosqlite.Row
+        if USE_SUPABASE:
+            query = supa_table("memories").select("key, value")
             if planet_id:
-                async with db.execute(
-                    """
-                    SELECT key, value FROM memories
-                    WHERE planet_id = ? OR planet_id IS NULL
-                    ORDER BY created_at DESC LIMIT 10
-                    """,
-                    (planet_id,),
-                ) as cur:
-                    rows = await cur.fetchall()
-            else:
-                async with db.execute(
-                    "SELECT key, value FROM memories ORDER BY created_at DESC LIMIT 10"
-                ) as cur:
-                    rows = await cur.fetchall()
+                query = query.or_(f"planet_id.eq.{planet_id},planet_id.is.null")
+            query = query.order("created_at", desc=True).limit(10)
+            result = query.execute()
+            rows = result.data or []
+        else:
+            async with aiosqlite.connect(DB_PATH) as db:
+                db.row_factory = aiosqlite.Row
+                if planet_id:
+                    async with db.execute(
+                        """
+                        SELECT key, value FROM memories
+                        WHERE planet_id = ? OR planet_id IS NULL
+                        ORDER BY created_at DESC LIMIT 10
+                        """,
+                        (planet_id,),
+                    ) as cur:
+                        rows = [dict(r) for r in await cur.fetchall()]
+                else:
+                    async with db.execute(
+                        "SELECT key, value FROM memories ORDER BY created_at DESC LIMIT 10"
+                    ) as cur:
+                        rows = [dict(r) for r in await cur.fetchall()]
         if not rows:
             return ""
         return "\n".join(f"- {r['key']}: {r['value']}" for r in rows)

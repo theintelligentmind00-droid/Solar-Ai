@@ -2,10 +2,13 @@
 plus daily briefing and schedule management endpoints."""
 
 import json
+import logging
 import os
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
+
+logger = logging.getLogger(__name__)
 
 import aiosqlite
 from anthropic import AsyncAnthropic
@@ -13,6 +16,8 @@ from fastapi import APIRouter
 from pydantic import BaseModel, Field
 
 from db.schema import DB_PATH
+from db.supabase_client import USE_SUPABASE
+from db.supabase_client import table as supa_table
 
 router = APIRouter(prefix="/briefing", tags=["briefing"])
 
@@ -58,7 +63,7 @@ async def get_briefing_schedule() -> dict[str, Any]:
                 "enabled": bool(data.get("enabled", True)),
             }
         except Exception:  # noqa: BLE001
-            pass
+            logger.warning("Failed to parse briefing schedule file at %s — using defaults", _SCHEDULE_PATH)
     return dict(_DEFAULT_SCHEDULE)
 
 
@@ -94,7 +99,7 @@ async def set_briefing_schedule(body: _ScheduleBody) -> dict[str, Any]:
             else:
                 scheduler.resume_job("daily_briefing")
     except Exception:  # noqa: BLE001
-        pass  # Scheduler not yet started or job not found — applies on next restart.
+        logger.warning("Could not reschedule briefing job — scheduler may not be running yet")
 
     return {"ok": True, **schedule}
 
@@ -105,42 +110,59 @@ async def set_briefing_schedule(body: _ScheduleBody) -> dict[str, Any]:
 @router.get("/{planet_id}")
 async def get_briefing(planet_id: str) -> dict[str, Any]:
     """Generate a proactive briefing for the planet using Claude Haiku."""
-    async with aiosqlite.connect(DB_PATH) as db:
-        db.row_factory = aiosqlite.Row
-
+    if USE_SUPABASE:
         # Planet name
-        async with db.execute("SELECT name FROM planets WHERE id = ?", (planet_id,)) as cur:
-            planet_row = await cur.fetchone()
-        planet_name = planet_row["name"] if planet_row else planet_id
+        result = supa_table("planets").select("name").eq("id", planet_id).limit(1).execute()
+        planet_name = result.data[0]["name"] if result.data else planet_id
 
         # Recent messages (last 10)
-        async with db.execute(
-            "SELECT role, content FROM messages WHERE planet_id = ? ORDER BY rowid DESC LIMIT 10",
-            (planet_id,),
-        ) as cur:
-            messages = [dict(r) for r in await cur.fetchall()]
-        messages.reverse()
+        result = supa_table("messages").select("role, content").eq("planet_id", planet_id).order("created_at", desc=True).limit(10).execute()
+        messages = list(reversed(result.data)) if result.data else []
 
         # Memories
-        async with db.execute(
-            """
-            SELECT key, value FROM memories
-            WHERE planet_id = ? OR planet_id IS NULL
-            ORDER BY created_at DESC LIMIT 10
-            """,
-            (planet_id,),
-        ) as cur:
-            memories = [dict(r) for r in await cur.fetchall()]
+        result = supa_table("memories").select("key, value").or_(f"planet_id.eq.{planet_id},planet_id.is.null").order("created_at", desc=True).limit(10).execute()
+        memories = result.data or []
 
         # Tasks
-        async with db.execute(
-            """
-            SELECT title, status, priority FROM tasks
-            WHERE planet_id = ? ORDER BY created_at DESC LIMIT 10
-            """,
-            (planet_id,),
-        ) as cur:
-            tasks = [dict(r) for r in await cur.fetchall()]
+        result = supa_table("tasks").select("title, status, priority").eq("planet_id", planet_id).order("created_at", desc=True).limit(10).execute()
+        tasks = result.data or []
+    else:
+        async with aiosqlite.connect(DB_PATH) as db:
+            db.row_factory = aiosqlite.Row
+
+            # Planet name
+            async with db.execute("SELECT name FROM planets WHERE id = ?", (planet_id,)) as cur:
+                planet_row = await cur.fetchone()
+            planet_name = planet_row["name"] if planet_row else planet_id
+
+            # Recent messages (last 10)
+            async with db.execute(
+                "SELECT role, content FROM messages WHERE planet_id = ? ORDER BY rowid DESC LIMIT 10",
+                (planet_id,),
+            ) as cur:
+                messages = [dict(r) for r in await cur.fetchall()]
+            messages.reverse()
+
+            # Memories
+            async with db.execute(
+                """
+                SELECT key, value FROM memories
+                WHERE planet_id = ? OR planet_id IS NULL
+                ORDER BY created_at DESC LIMIT 10
+                """,
+                (planet_id,),
+            ) as cur:
+                memories = [dict(r) for r in await cur.fetchall()]
+
+            # Tasks
+            async with db.execute(
+                """
+                SELECT title, status, priority FROM tasks
+                WHERE planet_id = ? ORDER BY created_at DESC LIMIT 10
+                """,
+                (planet_id,),
+            ) as cur:
+                tasks = [dict(r) for r in await cur.fetchall()]
 
     context_parts: list[str] = []
     if memories:

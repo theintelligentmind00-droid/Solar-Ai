@@ -2,12 +2,15 @@
 
 import json
 import uuid
+from datetime import datetime, timezone
 from typing import Any
 
 import aiosqlite
 import anthropic
 
 from db.schema import DB_PATH
+from db.supabase_client import USE_SUPABASE
+from db.supabase_client import table as supa_table
 
 
 async def load_context(
@@ -17,19 +20,32 @@ async def load_context(
     user_id: str = "local",
 ) -> list[dict[str, Any]]:
     """Load the last `limit` messages for a planet, formatted for the Claude API."""
-    async with aiosqlite.connect(db_path) as db:
-        async with db.execute(
-            """
-            SELECT role, content FROM messages
-            WHERE planet_id = ? AND user_id = ?
-            ORDER BY rowid DESC
-            LIMIT ?
-            """,
-            (planet_id, user_id, limit),
-        ) as cursor:
-            rows = await cursor.fetchall()
+    if USE_SUPABASE:
+        result = (
+            supa_table("messages")
+            .select("role, content")
+            .eq("planet_id", planet_id)
+            .eq("user_id", user_id)
+            .order("created_at", desc=True)
+            .limit(limit)
+            .execute()
+        )
+        rows = result.data  # list of dicts
+        return [{"role": r["role"], "content": r["content"]} for r in reversed(rows)]
+    else:
+        async with aiosqlite.connect(db_path) as db:
+            async with db.execute(
+                """
+                SELECT role, content FROM messages
+                WHERE planet_id = ? AND user_id = ?
+                ORDER BY rowid DESC
+                LIMIT ?
+                """,
+                (planet_id, user_id, limit),
+            ) as cursor:
+                rows = await cursor.fetchall()
 
-    return [{"role": row[0], "content": row[1]} for row in reversed(rows)]
+        return [{"role": row[0], "content": row[1]} for row in reversed(rows)]
 
 
 async def save_message(
@@ -40,12 +56,22 @@ async def save_message(
     user_id: str = "local",
 ) -> None:
     """Persist a single message to the messages table."""
-    async with aiosqlite.connect(db_path) as db:
-        await db.execute(
-            "INSERT INTO messages (id, planet_id, role, content, user_id) VALUES (?, ?, ?, ?, ?)",
-            (str(uuid.uuid4()), planet_id, role, content, user_id),
-        )
-        await db.commit()
+    if USE_SUPABASE:
+        supa_table("messages").insert({
+            "id": str(uuid.uuid4()),
+            "planet_id": planet_id,
+            "role": role,
+            "content": content,
+            "user_id": user_id,
+            "created_at": datetime.now(timezone.utc).isoformat(),
+        }).execute()
+    else:
+        async with aiosqlite.connect(db_path) as db:
+            await db.execute(
+                "INSERT INTO messages (id, planet_id, role, content, user_id) VALUES (?, ?, ?, ?, ?)",
+                (str(uuid.uuid4()), planet_id, role, content, user_id),
+            )
+            await db.commit()
 
 
 async def upsert_memory(
@@ -58,37 +84,82 @@ async def upsert_memory(
     user_id: str = "local",
 ) -> None:
     """Insert or update a memory by key+planet_id scope. Updates value and importance on conflict."""
-    async with aiosqlite.connect(db_path) as db:
+    if USE_SUPABASE:
+        now_iso = datetime.now(timezone.utc).isoformat()
         if planet_id is not None:
-            async with db.execute(
-                "SELECT id FROM memories WHERE key = ? AND planet_id = ? AND user_id = ?",
-                (key, planet_id, user_id),
-            ) as cursor:
-                existing = await cursor.fetchone()
+            existing = (
+                supa_table("memories")
+                .select("id, access_count")
+                .eq("key", key)
+                .eq("planet_id", planet_id)
+                .eq("user_id", user_id)
+                .limit(1)
+                .execute()
+            )
         else:
-            async with db.execute(
-                "SELECT id FROM memories WHERE key = ? AND planet_id IS NULL AND user_id = ?",
-                (key, user_id),
-            ) as cursor:
-                existing = await cursor.fetchone()
+            existing = (
+                supa_table("memories")
+                .select("id, access_count")
+                .eq("key", key)
+                .is_("planet_id", "null")
+                .eq("user_id", user_id)
+                .limit(1)
+                .execute()
+            )
 
-        if existing:
-            await db.execute(
-                """UPDATE memories
-                   SET value = ?, type = ?, importance = ?,
-                       last_accessed = datetime('now'),
-                       access_count = access_count + 1
-                   WHERE id = ?""",
-                (value, memory_type, importance, existing[0]),
-            )
+        if existing.data:
+            row = existing.data[0]
+            supa_table("memories").update({
+                "value": value,
+                "type": memory_type,
+                "importance": importance,
+                "last_accessed": now_iso,
+                "access_count": row.get("access_count", 0) + 1,
+            }).eq("id", row["id"]).execute()
         else:
-            await db.execute(
-                """INSERT INTO memories
-                   (id, planet_id, key, value, type, importance, last_accessed, access_count, user_id)
-                   VALUES (?, ?, ?, ?, ?, ?, datetime('now'), 0, ?)""",
-                (str(uuid.uuid4()), planet_id, key, value, memory_type, importance, user_id),
-            )
-        await db.commit()
+            supa_table("memories").insert({
+                "id": str(uuid.uuid4()),
+                "planet_id": planet_id,
+                "key": key,
+                "value": value,
+                "type": memory_type,
+                "importance": importance,
+                "last_accessed": now_iso,
+                "access_count": 0,
+                "user_id": user_id,
+            }).execute()
+    else:
+        async with aiosqlite.connect(db_path) as db:
+            if planet_id is not None:
+                async with db.execute(
+                    "SELECT id FROM memories WHERE key = ? AND planet_id = ? AND user_id = ?",
+                    (key, planet_id, user_id),
+                ) as cursor:
+                    existing = await cursor.fetchone()
+            else:
+                async with db.execute(
+                    "SELECT id FROM memories WHERE key = ? AND planet_id IS NULL AND user_id = ?",
+                    (key, user_id),
+                ) as cursor:
+                    existing = await cursor.fetchone()
+
+            if existing:
+                await db.execute(
+                    """UPDATE memories
+                       SET value = ?, type = ?, importance = ?,
+                           last_accessed = datetime('now'),
+                           access_count = access_count + 1
+                       WHERE id = ?""",
+                    (value, memory_type, importance, existing[0]),
+                )
+            else:
+                await db.execute(
+                    """INSERT INTO memories
+                       (id, planet_id, key, value, type, importance, last_accessed, access_count, user_id)
+                       VALUES (?, ?, ?, ?, ?, ?, datetime('now'), 0, ?)""",
+                    (str(uuid.uuid4()), planet_id, key, value, memory_type, importance, user_id),
+                )
+            await db.commit()
 
 
 async def save_memory(
@@ -109,35 +180,74 @@ async def upsert_profile(
     user_id: str = "local",
 ) -> None:
     """Insert or update a user personality/profile observation."""
-    async with aiosqlite.connect(db_path) as db:
-        async with db.execute(
-            "SELECT id, confidence FROM user_profile WHERE key = ? AND user_id = ?", (key, user_id)
-        ) as cursor:
-            existing = await cursor.fetchone()
+    if USE_SUPABASE:
+        now_iso = datetime.now(timezone.utc).isoformat()
+        existing = (
+            supa_table("user_profile")
+            .select("id, confidence")
+            .eq("key", key)
+            .eq("user_id", user_id)
+            .limit(1)
+            .execute()
+        )
 
-        if existing:
-            if confidence >= existing[1]:
-                await db.execute(
-                    "UPDATE user_profile SET value = ?, confidence = ?, updated_at = datetime('now') WHERE id = ?",
-                    (value, confidence, existing[0]),
-                )
+        if existing.data:
+            row = existing.data[0]
+            if confidence >= row["confidence"]:
+                supa_table("user_profile").update({
+                    "value": value,
+                    "confidence": confidence,
+                    "updated_at": now_iso,
+                }).eq("id", row["id"]).execute()
         else:
-            await db.execute(
-                "INSERT INTO user_profile (id, key, value, confidence, user_id) VALUES (?, ?, ?, ?, ?)",
-                (str(uuid.uuid4()), key, value, confidence, user_id),
-            )
-        await db.commit()
+            supa_table("user_profile").insert({
+                "id": str(uuid.uuid4()),
+                "key": key,
+                "value": value,
+                "confidence": confidence,
+                "user_id": user_id,
+            }).execute()
+    else:
+        async with aiosqlite.connect(db_path) as db:
+            async with db.execute(
+                "SELECT id, confidence FROM user_profile WHERE key = ? AND user_id = ?", (key, user_id)
+            ) as cursor:
+                existing = await cursor.fetchone()
+
+            if existing:
+                if confidence >= existing[1]:
+                    await db.execute(
+                        "UPDATE user_profile SET value = ?, confidence = ?, updated_at = datetime('now') WHERE id = ?",
+                        (value, confidence, existing[0]),
+                    )
+            else:
+                await db.execute(
+                    "INSERT INTO user_profile (id, key, value, confidence, user_id) VALUES (?, ?, ?, ?, ?)",
+                    (str(uuid.uuid4()), key, value, confidence, user_id),
+                )
+            await db.commit()
 
 
 async def load_user_profile(db_path: str = DB_PATH, user_id: str = "local") -> dict[str, str]:
-    """Return the user profile as a key→value dict, highest confidence first."""
-    async with aiosqlite.connect(db_path) as db:
-        async with db.execute(
-            "SELECT key, value FROM user_profile WHERE user_id = ? ORDER BY confidence DESC, updated_at DESC",
-            (user_id,),
-        ) as cursor:
-            rows = await cursor.fetchall()
-    return {row[0]: row[1] for row in rows}
+    """Return the user profile as a key->value dict, highest confidence first."""
+    if USE_SUPABASE:
+        result = (
+            supa_table("user_profile")
+            .select("key, value")
+            .eq("user_id", user_id)
+            .order("confidence", desc=True)
+            .order("updated_at", desc=True)
+            .execute()
+        )
+        return {r["key"]: r["value"] for r in result.data}
+    else:
+        async with aiosqlite.connect(db_path) as db:
+            async with db.execute(
+                "SELECT key, value FROM user_profile WHERE user_id = ? ORDER BY confidence DESC, updated_at DESC",
+                (user_id,),
+            ) as cursor:
+                rows = await cursor.fetchall()
+        return {row[0]: row[1] for row in rows}
 
 
 async def load_memories_categorized(
@@ -150,24 +260,43 @@ async def load_memories_categorized(
     Returns: {type_name: [(key, value), ...]}
     Global memories (planet_id IS NULL) are included alongside project-specific ones.
     """
-    async with aiosqlite.connect(db_path) as db:
-        async with db.execute(
-            """
-            SELECT key, value, COALESCE(type, 'fact') as type
-            FROM memories
-            WHERE (planet_id = ? OR planet_id IS NULL) AND user_id = ?
-            ORDER BY COALESCE(importance, 0.5) DESC, created_at DESC
-            """,
-            (planet_id, user_id),
-        ) as cursor:
-            rows = await cursor.fetchall()
+    if USE_SUPABASE:
+        result = (
+            supa_table("memories")
+            .select("key, value, type")
+            .or_(f"planet_id.eq.{planet_id},planet_id.is.null")
+            .eq("user_id", user_id)
+            .order("importance", desc=True)
+            .order("created_at", desc=True)
+            .execute()
+        )
+        rows = result.data
+    else:
+        async with aiosqlite.connect(db_path) as db:
+            async with db.execute(
+                """
+                SELECT key, value, COALESCE(type, 'fact') as type
+                FROM memories
+                WHERE (planet_id = ? OR planet_id IS NULL) AND user_id = ?
+                ORDER BY COALESCE(importance, 0.5) DESC, created_at DESC
+                """,
+                (planet_id, user_id),
+            ) as cursor:
+                rows = await cursor.fetchall()
 
-    result: dict[str, list[tuple[str, str]]] = {}
-    for key, value, mem_type in rows:
-        if mem_type not in result:
-            result[mem_type] = []
-        result[mem_type].append((key, value))
-    return result
+    result_dict: dict[str, list[tuple[str, str]]] = {}
+    if USE_SUPABASE:
+        for r in rows:
+            mem_type = r.get("type") or "fact"
+            if mem_type not in result_dict:
+                result_dict[mem_type] = []
+            result_dict[mem_type].append((r["key"], r["value"]))
+    else:
+        for key, value, mem_type in rows:
+            if mem_type not in result_dict:
+                result_dict[mem_type] = []
+            result_dict[mem_type].append((key, value))
+    return result_dict
 
 
 async def load_memories(

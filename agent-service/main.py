@@ -1,6 +1,7 @@
 """Solar AI OS — Local Agent Service entry point."""
 
 import json
+import os
 from contextlib import asynccontextmanager
 from datetime import datetime, timezone
 from pathlib import Path
@@ -17,6 +18,7 @@ from middleware.security_headers import SecurityHeadersMiddleware
 from routes.briefing import router as briefing_router
 from routes.calendar import router as calendar_router
 from routes.chat import router as chat_router
+from routes.civilization import router as civilization_router
 from routes.gmail import router as gmail_router
 from routes.greeting import router as greeting_router
 from routes.integrations import router as integrations_router
@@ -28,6 +30,9 @@ from routes.shell import router as shell_router
 from routes.tasks import router as tasks_router
 
 load_dotenv()
+
+# Web mode disables dangerous tools (shell, file reader) for hosted deployments.
+WEB_MODE: bool = os.getenv("WEB_MODE", "false").lower() == "true"
 
 # In-memory store for the latest generated briefing, polled by the frontend.
 latest_briefing: dict[str, Any] = {}
@@ -71,6 +76,8 @@ async def lifespan(application: FastAPI) -> AsyncGenerator[None, None]:
     await init_db()
     from db.schema import DB_PATH as _db_path
     print(f"[Solar AI OS] Agent service started. DB: {_db_path}")
+    if WEB_MODE:
+        print("[Solar AI OS] WEB_MODE enabled — shell and file reader tools disabled.")
 
     # Start the daily briefing scheduler.
     schedule = _load_schedule()
@@ -99,14 +106,21 @@ async def lifespan(application: FastAPI) -> AsyncGenerator[None, None]:
 
 app = FastAPI(title="Solar AI OS Agent Service", version="0.1.0", lifespan=lifespan)
 
-_ALLOWED_ORIGINS = [
-    "http://localhost:1420",       # Tauri dev
-    "http://localhost:5173",       # Vite dev
-    "http://localhost:8000",       # Same-origin (OAuth callback page)
-    "tauri://localhost",           # Tauri production (macOS/Linux)
-    "http://tauri.localhost",      # Tauri production (Windows — Chromium WebView2)
-    "https://tauri.localhost",     # Tauri production (Windows, secure context)
-]
+if WEB_MODE:
+    # In web mode, restrict origins to explicitly allowed domains.
+    _env_origins = os.getenv("ALLOWED_ORIGINS", "")
+    _ALLOWED_ORIGINS: list[str] = [
+        o.strip() for o in _env_origins.split(",") if o.strip()
+    ] if _env_origins else []
+else:
+    _ALLOWED_ORIGINS = [
+        "http://localhost:1420",       # Tauri dev
+        "http://localhost:5173",       # Vite dev
+        "http://localhost:8000",       # Same-origin (OAuth callback page)
+        "tauri://localhost",           # Tauri production (macOS/Linux)
+        "http://tauri.localhost",      # Tauri production (Windows — Chromium WebView2)
+        "https://tauri.localhost",     # Tauri production (Windows, secure context)
+    ]
 
 app.add_middleware(
     CORSMiddleware,
@@ -128,7 +142,9 @@ app.include_router(briefing_router)
 app.include_router(calendar_router)
 app.include_router(gmail_router)
 app.include_router(setup_router)
-app.include_router(shell_router)
+if not WEB_MODE:
+    app.include_router(shell_router)
+app.include_router(civilization_router)
 
 
 @app.get("/health")

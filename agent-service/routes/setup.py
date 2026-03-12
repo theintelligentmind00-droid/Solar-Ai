@@ -1,9 +1,12 @@
 """Setup routes — API key management via OS keychain."""
 
+import logging
 import os
 import re
 from pathlib import Path
 from typing import Any
+
+logger = logging.getLogger(__name__)
 
 from fastapi import APIRouter
 from pydantic import BaseModel, field_validator
@@ -74,8 +77,7 @@ async def save_api_key(payload: ApiKeyPayload) -> dict[str, bool]:
 
         keyring.set_password(_KEYRING_SERVICE, _KEYRING_USERNAME, payload.api_key)
     except Exception:
-        # Keychain unavailable — .env fallback still applies
-        pass
+        logger.warning("Keychain unavailable — falling back to .env for API key storage")
 
     # 2. Save to .env as fallback / development convenience
     _update_env_file("ANTHROPIC_API_KEY", payload.api_key)
@@ -97,7 +99,7 @@ async def get_api_key_status() -> dict[str, bool]:
         if stored:
             return {"configured": True}
     except Exception:
-        pass
+        logger.warning("Failed to read API key from keychain — checking other sources")
 
     # Check environment variable
     if os.environ.get("ANTHROPIC_API_KEY"):
@@ -125,8 +127,7 @@ async def delete_api_key() -> dict[str, bool]:
 
         keyring.delete_password(_KEYRING_SERVICE, _KEYRING_USERNAME)
     except Exception:
-        # Key may not exist in keyring — not an error
-        pass
+        logger.warning("Could not delete API key from keyring — key may not exist")
 
     # Remove from .env file
     _remove_from_env_file("ANTHROPIC_API_KEY")

@@ -1,9 +1,9 @@
 """Chat endpoint — routes messages through Claude and persists history."""
 
-import asyncio
 import json
 import logging
 import os
+from datetime import datetime, timezone
 from typing import Any
 
 logger = logging.getLogger(__name__)
@@ -16,6 +16,8 @@ from pydantic import BaseModel, Field
 
 import config
 from db.schema import DB_PATH
+from db.supabase_client import USE_SUPABASE
+from db.supabase_client import table as supa_table
 from memory.memory import (
     build_context_block,
     load_context,
@@ -460,12 +462,22 @@ async def _get_planet_name(planet_id: str, db_path: str = DB_PATH) -> str:
     """Look up a planet's display name, falling back to the id."""
     if planet_id == "sun":
         return "Main Agent"
-    async with aiosqlite.connect(db_path) as db:
-        async with db.execute(
-            "SELECT name FROM planets WHERE id = ?", (planet_id,)
-        ) as cursor:
-            row = await cursor.fetchone()
-    return row[0] if row else planet_id
+    if USE_SUPABASE:
+        result = (
+            supa_table("planets")
+            .select("name")
+            .eq("id", planet_id)
+            .limit(1)
+            .execute()
+        )
+        return result.data[0]["name"] if result.data else planet_id
+    else:
+        async with aiosqlite.connect(db_path) as db:
+            async with db.execute(
+                "SELECT name FROM planets WHERE id = ?", (planet_id,)
+            ) as cursor:
+                row = await cursor.fetchone()
+        return row[0] if row else planet_id
 
 
 @router.post("")
@@ -549,12 +561,17 @@ async def chat(body: ChatRequest, request: Request) -> dict[str, Any]:
     await save_message(body.planet_id, "assistant", reply, db_path=DB_PATH, user_id=uid)
 
     if body.planet_id != "sun":
-        async with aiosqlite.connect(DB_PATH) as db:
-            await db.execute(
-                "UPDATE planets SET last_activity_at = datetime('now') WHERE id = ? AND user_id = ?",
-                (body.planet_id, uid),
-            )
-            await db.commit()
+        if USE_SUPABASE:
+            supa_table("planets").update({
+                "last_activity_at": datetime.now(timezone.utc).isoformat(),
+            }).eq("id", body.planet_id).eq("user_id", uid).execute()
+        else:
+            async with aiosqlite.connect(DB_PATH) as db:
+                await db.execute(
+                    "UPDATE planets SET last_activity_at = datetime('now') WHERE id = ? AND user_id = ?",
+                    (body.planet_id, uid),
+                )
+                await db.commit()
 
     await smart_extract_memories(
         body.message, reply, body.planet_id, planet_name, api_key, db_path=DB_PATH, user_id=uid
@@ -658,12 +675,17 @@ async def chat_stream(body: ChatRequest, request: Request) -> StreamingResponse:
             await save_message(body.planet_id, "assistant", full_reply, db_path=DB_PATH, user_id=_uid)
 
             if body.planet_id != "sun":
-                async with aiosqlite.connect(DB_PATH) as db:
-                    await db.execute(
-                        "UPDATE planets SET last_activity_at = datetime('now') WHERE id = ? AND user_id = ?",
-                        (body.planet_id, _uid),
-                    )
-                    await db.commit()
+                if USE_SUPABASE:
+                    supa_table("planets").update({
+                        "last_activity_at": datetime.now(timezone.utc).isoformat(),
+                    }).eq("id", body.planet_id).eq("user_id", _uid).execute()
+                else:
+                    async with aiosqlite.connect(DB_PATH) as db:
+                        await db.execute(
+                            "UPDATE planets SET last_activity_at = datetime('now') WHERE id = ? AND user_id = ?",
+                            (body.planet_id, _uid),
+                        )
+                        await db.commit()
 
             await smart_extract_memories(
                 body.message, full_reply, body.planet_id, planet_name, api_key, db_path=DB_PATH, user_id=_uid
