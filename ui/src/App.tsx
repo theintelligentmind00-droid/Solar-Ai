@@ -194,6 +194,7 @@ export default function App() {
   useEffect(() => {
     let cancelled = false;
     const poll = async () => {
+      // Initial fast retries for cold-start
       for (let i = 0; i < 30; i++) {
         if (cancelled) return;
         try {
@@ -207,7 +208,17 @@ export default function App() {
       if (!cancelled) setServiceOnline(false);
     };
     poll();
-    return () => { cancelled = true; };
+    // Keep checking every 30s so we recover if the service comes back
+    const interval = setInterval(async () => {
+      if (cancelled) return;
+      try {
+        await api.health();
+        if (!cancelled) setServiceOnline(true);
+      } catch {
+        if (!cancelled) setServiceOnline(false);
+      }
+    }, 30_000);
+    return () => { cancelled = true; clearInterval(interval); };
   }, []);
 
   useEffect(() => {
@@ -427,7 +438,7 @@ export default function App() {
             borderBottom: "1px solid rgba(239,68,68,0.25)",
           }}
         >
-          Solar AI is starting up â€" please wait a momentâ€¦
+          Can't reach the agent service — reconnecting automatically…
         </div>
       )}
 
