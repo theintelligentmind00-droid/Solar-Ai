@@ -1,12 +1,14 @@
 """Solar AI OS — Local Agent Service entry point."""
 
 import json
+import logging
 import os
 from contextlib import asynccontextmanager
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, AsyncGenerator
 
+import httpx
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from dotenv import load_dotenv
 from fastapi import FastAPI
@@ -60,6 +62,19 @@ def _load_schedule() -> dict[str, Any]:
     return {"hour": 8, "minute": 0, "enabled": True}
 
 
+async def keep_alive() -> None:
+    """Ping our own public URL to prevent Railway from sleeping the service."""
+    domain = os.getenv("RAILWAY_PUBLIC_DOMAIN")
+    if not domain:
+        return
+    try:
+        async with httpx.AsyncClient() as client:
+            r = await client.get(f"https://{domain}/health", timeout=10)
+            logging.getLogger(__name__).debug("Keep-alive ping: %s", r.status_code)
+    except Exception:  # noqa: BLE001
+        pass
+
+
 async def run_daily_briefing() -> None:
     """Called by the scheduler — generates the briefing and caches it in memory."""
     from skills.briefing import generate_briefing  # noqa: PLC0415
@@ -82,6 +97,16 @@ async def lifespan(application: FastAPI) -> AsyncGenerator[None, None]:
         print(f"[Solar AI OS] Agent service started. DB: {_db_path}")
     if WEB_MODE:
         print("[Solar AI OS] WEB_MODE enabled — shell and file reader tools disabled.")
+
+    # Keep-alive ping — prevents Railway from sleeping the service.
+    if os.getenv("RAILWAY_PUBLIC_DOMAIN"):
+        scheduler.add_job(
+            keep_alive,
+            trigger="interval",
+            minutes=4,
+            id="keep_alive",
+            replace_existing=True,
+        )
 
     # Start the daily briefing scheduler.
     schedule = _load_schedule()
