@@ -157,7 +157,6 @@ async def delete_planet(planet_id: str, request: Request) -> None:
         supa_table("messages").delete().eq("planet_id", planet_id).eq("user_id", uid).execute()
         supa_table("tasks").delete().eq("planet_id", planet_id).eq("user_id", uid).execute()
         supa_table("memories").delete().eq("planet_id", planet_id).eq("user_id", uid).execute()
-        supa_table("action_log").delete().eq("planet_id", planet_id).execute()
         supa_table("planets").delete().eq("id", planet_id).eq("user_id", uid).execute()
     else:
         async with aiosqlite.connect(DB_PATH) as db:
@@ -165,7 +164,6 @@ async def delete_planet(planet_id: str, request: Request) -> None:
             await db.execute("DELETE FROM messages WHERE planet_id = ? AND user_id = ?", (planet_id, uid))
             await db.execute("DELETE FROM tasks WHERE planet_id = ? AND user_id = ?", (planet_id, uid))
             await db.execute("DELETE FROM memories WHERE planet_id = ? AND user_id = ?", (planet_id, uid))
-            await db.execute("DELETE FROM action_log WHERE planet_id = ?", (planet_id,))
             result = await db.execute("DELETE FROM planets WHERE id = ? AND user_id = ?", (planet_id, uid))
             await db.commit()
         if result.rowcount == 0:

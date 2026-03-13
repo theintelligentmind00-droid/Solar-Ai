@@ -26,7 +26,7 @@ describe("useDayNightCycle", () => {
   it("sets CSS custom properties on the document root", () => {
     renderHook(() => useDayNightCycle());
     const propertyNames = setPropertySpy.mock.calls.map(
-      (call) => call[0] as string
+      (call: [string, string]) => call[0]
     );
     expect(propertyNames).toContain("--space-bg-tint");
     expect(propertyNames).toContain("--star-opacity");
